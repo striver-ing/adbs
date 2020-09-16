@@ -1,23 +1,21 @@
 package adbs.device;
 
-import adbs.channel.FutureTransportFactory;
-import adbs.channel.Transport;
-import adbs.channel.TransportFactory;
+import adbs.channel.AdbChannelInitializer;
 import adbs.constant.DeviceType;
 import adbs.constant.Feature;
+import adbs.feature.AdbShell;
+import adbs.feature.AdbSync;
+import io.netty.channel.ChannelFuture;
 import io.netty.util.concurrent.Future;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
-public interface AdbDevice {
+public interface AdbDevice extends AdbSync, AdbShell {
 
-    Future<?> close(boolean autoReconnect);
-
-    default Future<?> close() {
-        return close(false);
-    }
+    Future<?> close();
 
     /**
      * serial             print <serial-number>
@@ -61,8 +59,14 @@ public interface AdbDevice {
 
     String exec(String destination, long timeout, TimeUnit unit) throws IOException;
 
-    <I, O> Transport<I, O> open(String destination, long timeout, TimeUnit unit, FutureTransportFactory<I, O> factory) throws IOException;
+    ChannelFuture open(String destination, AdbChannelInitializer initializer) throws IOException;
 
-    void reverse(String destination, TransportFactory factory) throws IOException;
+    void reverse(String destination, AdbChannelInitializer initializer) throws IOException;
+
+    List<String> reverseList() throws IOException;
+
+    void reverseRemove(String destination) throws IOException;
+
+    void reverseRemoveAll() throws IOException;
 
 }

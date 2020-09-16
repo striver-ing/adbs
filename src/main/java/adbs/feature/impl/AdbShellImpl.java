@@ -1,17 +1,24 @@
-package adbs.client;
+package adbs.feature.impl;
 
 import adbs.device.AdbDevice;
+import adbs.feature.AdbShell;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelInboundHandler;
+import io.netty.handler.codec.LineBasedFrameDecoder;
+import io.netty.handler.codec.string.StringDecoder;
+import io.netty.handler.codec.string.StringEncoder;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
 import static adbs.constant.Constants.DEFAULT_READ_TIMEOUT;
 
-public class ShellClient {
+public class AdbShellImpl implements AdbShell {
 
     private final AdbDevice device;
 
-    public ShellClient(AdbDevice device) {
+    public AdbShellImpl(AdbDevice device) {
         this.device = device;
     }
 
@@ -41,5 +48,16 @@ public class ShellClient {
         return device.exec(sb.toString(), DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS);
     }
 
-    //TODO 后续可以考虑实现interactive模式
+    @Override
+    public ChannelFuture shell(boolean lineFramed, ChannelInboundHandler handler) throws IOException {
+        return device.open("shell:\0", channel -> {
+            if (lineFramed) {
+                channel.pipeline().addLast(new LineBasedFrameDecoder(8192));
+            }
+            channel.pipeline()
+                    .addLast(new StringDecoder(StandardCharsets.UTF_8))
+                    .addLast(new StringEncoder(StandardCharsets.UTF_8))
+                    .addLast(handler);
+        });
+    }
 }

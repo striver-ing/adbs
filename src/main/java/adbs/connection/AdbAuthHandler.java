@@ -21,7 +21,6 @@ import java.net.ProtocolException;
 import java.nio.charset.StandardCharsets;
 import java.security.interfaces.RSAPrivateCrtKey;
 import java.util.Arrays;
-import java.util.Base64;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;

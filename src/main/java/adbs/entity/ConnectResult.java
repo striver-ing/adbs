@@ -3,13 +3,10 @@ package adbs.entity;
 import adbs.constant.DeviceType;
 import adbs.constant.Feature;
 import io.netty.channel.Channel;
-import io.netty.channel.nio.NioEventLoopGroup;
 
 import java.util.Set;
 
 public class ConnectResult {
-
-    private NioEventLoopGroup executors;
 
     private Channel channel;
 
@@ -22,14 +19,6 @@ public class ConnectResult {
     private String device;
 
     private Set<Feature> features;
-
-    public NioEventLoopGroup getExecutors() {
-        return executors;
-    }
-
-    public void setExecutors(NioEventLoopGroup executors) {
-        this.executors = executors;
-    }
 
     public Channel getChannel() {
         return channel;

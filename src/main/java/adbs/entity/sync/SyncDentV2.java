@@ -1,6 +1,6 @@
-package adbs.entity;
+package adbs.entity.sync;
 
-import adbs.constant.SyncID;
+import adbs.entity.StatMode;
 
 import java.util.Date;
 
@@ -22,11 +22,11 @@ public class SyncDentV2 extends SyncDent {
 
     public final Date ctime;
 
-    public SyncDentV2(SyncID sid, StatMode mode, long size,
+    public SyncDentV2(StatMode mode, long size,
                       Date mtime, String name, long error,
                       long dev, long ino, long nlink,
                       long uid, long gid, Date atime, Date ctime) {
-        super(sid, mode, size, mtime, name);
+        super(mode, size, mtime, name);
         this.error = error;
         this.dev = dev;
         this.ino = ino;

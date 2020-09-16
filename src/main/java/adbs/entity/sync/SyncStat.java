@@ -1,10 +1,10 @@
-package adbs.entity;
+package adbs.entity.sync;
 
-import adbs.constant.SyncID;
+import adbs.entity.StatMode;
 
 import java.util.Date;
 
-public class SyncStat extends SyncMessage {
+public class SyncStat {
 
     public final StatMode mode;
 
@@ -12,8 +12,7 @@ public class SyncStat extends SyncMessage {
 
     public final Date mtime;
 
-    public SyncStat(SyncID sid, StatMode mode, long size, Date mtime) {
-        super(sid);
+    public SyncStat(StatMode mode, long size, Date mtime) {
         this.mode = mode;
         this.size = size;
         this.mtime = mtime;

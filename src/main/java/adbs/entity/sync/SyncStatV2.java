@@ -1,6 +1,6 @@
-package adbs.entity;
+package adbs.entity.sync;
 
-import adbs.constant.SyncID;
+import adbs.entity.StatMode;
 
 import java.util.Date;
 
@@ -22,11 +22,11 @@ public class SyncStatV2 extends SyncStat {
 
     public final Date ctime;
 
-    public SyncStatV2(SyncID sid, StatMode mode, long size,
+    public SyncStatV2(StatMode mode, long size,
                       Date mtime, long error, long dev,
                       long ino, long nlink, long uid,
                       long gid, Date atime, Date ctime) {
-        super(sid, mode, size, mtime);
+        super(mode, size, mtime);
         this.error = error;
         this.dev = dev;
         this.ino = ino;

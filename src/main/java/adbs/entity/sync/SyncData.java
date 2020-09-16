@@ -1,20 +1,14 @@
-package adbs.entity;
+package adbs.entity.sync;
 
-import adbs.constant.SyncID;
 import io.netty.buffer.ByteBuf;
 import io.netty.util.ReferenceCounted;
 
-public class SyncData extends SyncMessage implements ReferenceCounted {
+public class SyncData implements ReferenceCounted {
 
     public final ByteBuf data;
 
-    public SyncData(SyncID sid, ByteBuf data) {
-        super(sid);
-        this.data = data;
-    }
-
     public SyncData(ByteBuf data) {
-        this(SyncID.DATA, data);
+        this.data = data;
     }
 
     @Override

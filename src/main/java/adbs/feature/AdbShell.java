@@ -7,7 +7,7 @@ import java.io.IOException;
 
 public interface AdbShell {
 
-    String exec(String cmd, String... args) throws IOException;
+    String shell(String cmd, String... args) throws IOException;
 
     ChannelFuture shell(boolean lineFramed, ChannelInboundHandler handler) throws IOException;
 }

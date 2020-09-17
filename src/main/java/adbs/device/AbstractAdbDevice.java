@@ -3,9 +3,7 @@ package adbs.device;
 import adbs.channel.AdbChannel;
 import adbs.channel.AdbChannelAddress;
 import adbs.channel.AdbChannelInitializer;
-import adbs.connection.AdbAuthHandler;
 import adbs.connection.AdbChannelProcessor;
-import adbs.connection.AdbPacketCodec;
 import adbs.constant.DeviceType;
 import adbs.constant.Feature;
 import adbs.entity.ConnectResult;
@@ -16,16 +14,10 @@ import adbs.feature.AdbShell;
 import adbs.feature.AdbSync;
 import adbs.feature.impl.AdbShellImpl;
 import adbs.feature.impl.AdbSyncImpl;
-import adbs.util.AuthUtil;
+import adbs.util.ChannelFactory;
 import adbs.util.ChannelUtil;
 import com.google.common.util.concurrent.SettableFuture;
-import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.*;
-import io.netty.channel.nio.NioEventLoopGroup;
-import io.netty.channel.socket.SocketChannel;
-import io.netty.channel.socket.nio.NioSocketChannel;
-import io.netty.handler.codec.bytes.ByteArrayDecoder;
-import io.netty.handler.codec.bytes.ByteArrayEncoder;
 import io.netty.handler.codec.string.StringDecoder;
 import io.netty.handler.codec.string.StringEncoder;
 import org.apache.commons.lang3.StringUtils;
@@ -36,9 +28,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.ProtocolException;
-import java.net.Socket;
 import java.nio.charset.StandardCharsets;
-import java.security.interfaces.RSAPrivateCrtKey;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -51,31 +41,25 @@ import java.util.stream.Collectors;
 
 import static adbs.constant.Constants.DEFAULT_READ_TIMEOUT;
 
-public class SocketAdbDevice implements AdbDevice {
+public abstract class AbstractAdbDevice implements AdbDevice {
 
-    private static final Logger logger = LoggerFactory.getLogger(SocketAdbDevice.class);
+    private static final Logger logger = LoggerFactory.getLogger(AbstractAdbDevice.class);
 
     private final String serial;
 
-    private final String host;
-
-    private final Integer port;
-
-    private final RSAPrivateCrtKey privateKey;
-
-    private final byte[] publicKey;
+    private final ChannelFactory factory;
 
     private final Map<CharSequence, AdbChannelInitializer> reverseMap;
 
     private final AtomicInteger channelIdGen;
-
-    private final NioEventLoopGroup executors;
 
     private final AdbSync sync;
 
     private final AdbShell shell;
 
     //设备连接信息
+    private volatile Channel connection;
+
     private volatile DeviceType type;
 
     private volatile String model;
@@ -86,28 +70,14 @@ public class SocketAdbDevice implements AdbDevice {
 
     private volatile Set<Feature> features;
 
-    protected volatile Channel connection;
-
-    public SocketAdbDevice(String host, Integer port, RSAPrivateCrtKey privateKey, byte[] publicKey) throws IOException {
-        this.serial = host + ":" + port;
-        this.host = host;
-        this.port = port;
-        this.privateKey = privateKey;
-        this.publicKey = publicKey;
+    public AbstractAdbDevice(String serial, ChannelFactory factory) throws IOException {
+        this.serial = serial;
+        this.factory = factory;
         this.reverseMap = new ConcurrentHashMap<>();
         this.channelIdGen = new AtomicInteger(1);
-        this.executors = new NioEventLoopGroup(1, r -> {
-            return new Thread(r, "Connection-" + serial);
-        });
         this.sync = new AdbSyncImpl(this);
         this.shell = new AdbShellImpl(this);
-        try {
-            ConnectResult result = connect();
-            this.initConnect(result);
-        } catch (Throwable cause) {
-            this.executors.shutdownGracefully();
-            throw new IOException("Connect to " + host + ":" + port + " failed: " + cause.getMessage(), cause);
-        }
+        this.connect();
     }
 
     @Override
@@ -140,41 +110,31 @@ public class SocketAdbDevice implements AdbDevice {
         return type;
     }
 
-    private ConnectResult connect() throws Exception {
-        Bootstrap bootstrap = new Bootstrap();
+    private void connect() throws IOException {
         SettableFuture<ConnectResult> future = SettableFuture.create();
-        Channel channel = bootstrap.group(executors)
-                .channel(NioSocketChannel.class)
-                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 30000)
-                .option(ChannelOption.SO_KEEPALIVE, true)
-                .option(ChannelOption.TCP_NODELAY, true)
-                .option(ChannelOption.SO_LINGER, 3)
-                .option(ChannelOption.SO_REUSEADDR, true)
-                .option(ChannelOption.AUTO_CLOSE, true)
-                .handler(new ChannelInitializer<SocketChannel>() {
-                    @Override
-                    protected void initChannel(SocketChannel ch) throws Exception {
-                        ch.pipeline()
-                                .addLast(new AdbPacketCodec())
-                                .addLast(new AdbAuthHandler(future, privateKey, publicKey))
-                                .addLast("handler", new AdbChannelProcessor(SocketAdbDevice.this, channelIdGen, reverseMap));
-                    }
-                })
-                .connect(host, port)
-                .sync()
-                .channel();
-        ConnectResult result = future.get(DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS);
-        result.setChannel(channel);
-        return result;
-    }
-
-    protected void initConnect(ConnectResult result) {
-        this.type = result.getType();
-        this.model = result.getModel();
-        this.product = result.getProduct();
-        this.device = result.getDevice();
-        this.features = result.getFeatures();
-        this.connection = result.getChannel();
+        this.connection = factory.newChannel(future);
+        this.connection.pipeline().addFirst(new ChannelInboundHandlerAdapter(){
+            @Override
+            public void channelActive(ChannelHandlerContext ctx) throws Exception {
+                ChannelPipeline p = ctx.pipeline();
+                if (p.get(AdbChannelProcessor.class) != null) {
+                    p.remove(AdbChannelProcessor.class);
+                }
+                p.addLast("handler", new AdbChannelProcessor(AbstractAdbDevice.this, channelIdGen, reverseMap));
+                ctx.fireChannelActive();
+            }
+        });
+        try {
+            ConnectResult result = future.get(DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS);
+            this.type = result.getType();
+            this.model = result.getModel();
+            this.product = result.getProduct();
+            this.device = result.getDevice();
+            this.features = result.getFeatures();
+        } catch (Throwable cause) {
+            close();
+            throw new IOException("Connect to " + serial + " failed: " + cause.getMessage(), cause);
+        }
     }
 
     @Override
@@ -251,16 +211,15 @@ public class SocketAdbDevice implements AdbDevice {
         try {
             future.get(DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS);
         } catch (Throwable cause) {
-            throw new IOException("reconnect to `" + host + ":" + port + "` failed:" + cause.getMessage(), cause);
+            throw new IOException("reconnect to `" + serial + "` failed:" + cause.getMessage(), cause);
         }
         while (true) {
             try {
-                ConnectResult connectResult = this.connect();
-                this.initConnect(connectResult);
-                logger.info("reconnected to `{}:{}`", host, port);
+                this.connect();
+                logger.info("reconnected to `{}`", serial);
                 break;
             } catch (Throwable cause) {
-                logger.error("reconnect to `{}:{}` failed:{}", host, port, cause.getMessage());
+                logger.error("reconnect to `{}` failed:{}", serial, cause.getMessage());
             }
         }
     }
@@ -323,8 +282,8 @@ public class SocketAdbDevice implements AdbDevice {
     }
 
     @Override
-    public String exec(String cmd, String... args) throws IOException {
-        return shell.exec(cmd, args);
+    public String shell(String cmd, String... args) throws IOException {
+        return shell.shell(cmd, args);
     }
 
     @Override
@@ -367,99 +326,17 @@ public class SocketAdbDevice implements AdbDevice {
         reverseMap.clear();
     }
 
+    protected abstract void doClose();
+
     @Override
     public io.netty.util.concurrent.Future<?> close() {
-        return this.executors.shutdownGracefully().addListener(f -> {
+        return this.connection.close().addListener(f -> {
+            doClose();
             if (f.cause() == null) {
-                logger.info("connection `{}:{}` closed", host, port);
+                logger.info("connection `{}` closed", serial);
             } else {
-                logger.error("connection `{}:{}` close error:{}", host, port, f.cause().getMessage(), f.cause());
+                logger.error("connection `{}` close error:{}", serial, f.cause().getMessage(), f.cause());
             }
         });
     }
-
-    public static void main(String[] args) throws Exception {
-        RSAPrivateCrtKey privateKey = AuthUtil.loadPrivateKey("adbkey");
-        String publicKey = AuthUtil.generatePublicKey(privateKey);
-        AdbChannelInitializer initializer = new AdbChannelInitializer() {
-            @Override
-            public void initChannel(Channel channel) {
-                channel.pipeline()
-                        .addLast(new ByteArrayDecoder())
-                        .addLast(new ByteArrayEncoder())
-                        .addLast(new ChannelInboundHandlerAdapter(){
-
-                            private Socket socket;
-
-                            private InputStream inputStream;
-
-                            private OutputStream outputStream;
-
-                            @Override
-                            public void channelActive(ChannelHandlerContext ctx) throws Exception {
-                                try {
-                                    socket = new Socket("127.0.0.1", 8889);
-                                    inputStream = socket.getInputStream();
-                                    outputStream = socket.getOutputStream();
-                                    new Thread() {
-                                        @Override
-                                        public void run() {
-                                            while (true) {
-                                                try {
-                                                    byte[] b = new byte[4096];
-                                                    int size = inputStream.read(b);
-                                                    if (size == -1) {
-                                                        break;
-                                                    }
-                                                    if (size > 0) {
-                                                        b = Arrays.copyOfRange(b, 0, size);
-                                                        ctx.writeAndFlush(b);
-                                                    }
-                                                } catch (Throwable cause) {
-                                                    cause.printStackTrace();
-                                                }
-                                            }
-                                        }
-                                    }.start();
-                                } catch (Throwable cause) {
-                                    cause.printStackTrace();
-                                }
-                            }
-
-                            @Override
-                            public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
-                                try {
-                                    byte[] bytes = (byte[]) msg;
-                                    outputStream.write(bytes);
-                                } catch (Throwable cause) {
-                                    cause.printStackTrace();
-                                }
-                            }
-                        });
-            }
-        };
-        SocketAdbDevice device = new SocketAdbDevice("127.0.0.1", 6000, privateKey, publicKey.getBytes(StandardCharsets.UTF_8));
-        SyncStat stat = device.stat("/sdcard/base.apk2");
-        System.out.println(stat);
-//        //System.out.println(device.shell("ls", "-l", "/"));
-//        device.root();
-//        System.out.println("rooted");
-//        device.unroot();
-//        System.out.println("unrooted");
-//        device.close();
-//        String result = device.exec("shell:ls -l /\0", 30, TimeUnit.SECONDS);
-//        System.out.println(result);
-//        SocketAdbDevice device = new SocketAdbDevice("127.0.0.1", 6000, privateKey, publicKey.getBytes(StandardCharsets.UTF_8)) {
-//            @Override
-//            protected void initConnect(ConnectResult result) {
-//                super.initConnect(result);
-//                try {
-//                    reverse("tcp:1234", initializer);
-//                } catch (Throwable cause) {
-//                    throw new RuntimeException(cause.getMessage(), cause);
-//                }
-//            }
-//        };
-    }
-
 }

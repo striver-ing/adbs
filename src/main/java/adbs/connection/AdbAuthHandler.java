@@ -56,15 +56,20 @@ public class AdbAuthHandler extends ChannelInboundHandlerAdapter {
     @Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
         ByteBuf payload = ctx.alloc().buffer(1024);
-        payload.writeCharSequence("host::features=", StandardCharsets.UTF_8);
-        Feature[] features = Feature.values();
-        for(int i=0; i<features.length; i++) {
-            if (i > 0) {
-                payload.writeChar(',');
+        try {
+            payload.writeCharSequence("host::features=", StandardCharsets.UTF_8);
+            Feature[] features = Feature.values();
+            for (int i = 0; i < features.length; i++) {
+                if (i > 0) {
+                    payload.writeChar(',');
+                }
+                payload.writeCharSequence(features[i].getCode(), StandardCharsets.UTF_8);
             }
-            payload.writeCharSequence(features[i].getCode(), StandardCharsets.UTF_8);
+            write(ctx, new AdbPacket(Command.A_CNXN, Constants.A_VERSION, Constants.MAX_PAYLOAD, payload));
+        } catch (Exception e) {
+            ReferenceCountUtil.safeRelease(payload);
+            throw e;
         }
-        write(ctx, new AdbPacket(Command.A_CNXN, Constants.A_VERSION, Constants.MAX_PAYLOAD, payload));
     }
 
     @Override

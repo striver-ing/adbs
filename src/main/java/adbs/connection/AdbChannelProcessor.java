@@ -4,7 +4,7 @@ import adbs.channel.AdbChannel;
 import adbs.channel.AdbChannelAddress;
 import adbs.channel.AdbChannelInitializer;
 import adbs.constant.Command;
-import adbs.device.SocketAdbDevice;
+import adbs.device.AdbDevice;
 import adbs.entity.AdbPacket;
 import adbs.util.ChannelUtil;
 import io.netty.channel.ChannelHandlerContext;
@@ -22,14 +22,14 @@ public class AdbChannelProcessor extends ChannelInboundHandlerAdapter {
 
     private static final Logger logger = LoggerFactory.getLogger(AdbChannelProcessor.class);
 
-    private final SocketAdbDevice device;
+    private final AdbDevice device;
 
     private final AtomicInteger channelIdGen;
 
     private final Map<CharSequence, AdbChannelInitializer> reverseMap;
 
     public AdbChannelProcessor(
-            SocketAdbDevice device,
+            AdbDevice device,
             AtomicInteger channelIdGen,
             Map<CharSequence, AdbChannelInitializer> reverseMap
             ) {

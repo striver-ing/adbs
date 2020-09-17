@@ -2,13 +2,10 @@ package adbs.entity;
 
 import adbs.constant.DeviceType;
 import adbs.constant.Feature;
-import io.netty.channel.Channel;
 
 import java.util.Set;
 
 public class ConnectResult {
-
-    private Channel channel;
 
     private DeviceType type;
 
@@ -19,14 +16,6 @@ public class ConnectResult {
     private String device;
 
     private Set<Feature> features;
-
-    public Channel getChannel() {
-        return channel;
-    }
-
-    public void setChannel(Channel channel) {
-        this.channel = channel;
-    }
 
     public DeviceType getType() {
         return type;

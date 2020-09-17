@@ -38,7 +38,7 @@ public class AdbShellImpl implements AdbShell {
         return cmdLine;
     }
 
-    public String exec(String cmd, String... args) throws IOException {
+    public String shell(String cmd, String... args) throws IOException {
         StringBuilder sb = new StringBuilder();
         sb.append("shell:");
         if (cmd != null) {

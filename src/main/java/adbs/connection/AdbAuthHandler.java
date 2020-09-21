@@ -29,16 +29,13 @@ public class AdbAuthHandler extends ChannelInboundHandlerAdapter {
 
     private static final Logger logger = LoggerFactory.getLogger(AdbAuthHandler.class);
 
-    private final SettableFuture<ConnectResult> future;
-
     private final RSAPrivateCrtKey privateKey;
 
     private final byte[] publicKey;
 
     private final AtomicInteger state;
 
-    public AdbAuthHandler(SettableFuture<ConnectResult> future, RSAPrivateCrtKey privateKey, byte[] publicKey) {
-        this.future = future;
+    public AdbAuthHandler(RSAPrivateCrtKey privateKey, byte[] publicKey) {
         this.privateKey = privateKey;
         this.publicKey = publicKey;
         this.state = new AtomicInteger(0);
@@ -48,7 +45,7 @@ public class AdbAuthHandler extends ChannelInboundHandlerAdapter {
         ctx.writeAndFlush(message)
                 .addListener(f -> {
                     if (f.cause() != null) {
-                        future.setException(f.cause());
+                        ctx.fireExceptionCaught(f.cause());
                     }
                 });
     }
@@ -88,12 +85,12 @@ public class AdbAuthHandler extends ChannelInboundHandlerAdapter {
         switch (message.command) {
             case A_AUTH:
                 if (message.arg0 != Constants.ADB_AUTH_TOKEN) {
-                    future.setException(new ProtocolException("Invalid auth type: " + message.arg0));
+                    ctx.fireExceptionCaught(new ProtocolException("Invalid auth type: " + message.arg0));
                     return;
                 }
                 if (state.compareAndSet(0, 1)) {
                     if (payload.length != Constants.TOKEN_SIZE) {
-                        future.setException(new ProtocolException("Invalid token size, expect=" + Constants.TOKEN_SIZE + ", actual=" + payload.length));
+                        ctx.fireExceptionCaught(new ProtocolException("Invalid token size, expect=" + Constants.TOKEN_SIZE + ", actual=" + payload.length));
                         return;
                     }
                     byte[] sign = AuthUtil.sign(privateKey, payload).toByteArray();
@@ -106,7 +103,7 @@ public class AdbAuthHandler extends ChannelInboundHandlerAdapter {
                     keyBuf.writeBytes(bytes);
                     write(ctx, new AdbPacket(Command.A_AUTH, Constants.ADB_AUTH_RSAPUBLICKEY, 0, keyBuf));
                 } else {
-                    future.setException(new Exception("State error:" + state));
+                    ctx.fireExceptionCaught(new Exception("State error:" + state));
                 }
                 break;
 
@@ -147,7 +144,7 @@ public class AdbAuthHandler extends ChannelInboundHandlerAdapter {
                     }
                 }
                 devModel.setType(DeviceType.findByCode(pieces[0]));
-                future.set(devModel);
+                ctx.fireUserEventTriggered(devModel);
                 break;
 
             default:
@@ -156,13 +153,4 @@ public class AdbAuthHandler extends ChannelInboundHandlerAdapter {
         }
     }
 
-    @Override
-    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-        future.setException(cause);
-    }
-
-    @Override
-    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-        future.setException(new IOException("Connection closed"));
-    }
 }

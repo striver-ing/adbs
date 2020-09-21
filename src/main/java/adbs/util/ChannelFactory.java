@@ -1,12 +1,13 @@
 package adbs.util;
 
-import adbs.entity.ConnectResult;
-import com.google.common.util.concurrent.SettableFuture;
+import adbs.device.AbstractAdbDevice;
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelInitializer;
 
 @FunctionalInterface
 public interface ChannelFactory {
 
-    Channel newChannel(SettableFuture<ConnectResult> future);
+    ChannelFuture newChannel(AbstractAdbDevice device, ChannelInitializer<Channel> initializer);
 
 }

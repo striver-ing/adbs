@@ -1,10 +1,8 @@
 package adbs.channel;
 
 import adbs.constant.Command;
-import adbs.constant.Constants;
 import adbs.entity.AdbPacket;
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
 import io.netty.util.ReferenceCountUtil;
 import io.netty.util.internal.StringUtil;
@@ -17,6 +15,8 @@ import java.nio.channels.ConnectionPendingException;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+
+import static io.netty.channel.internal.ChannelUtils.WRITE_STATUS_SNDBUF_FULL;
 
 public class AdbChannel extends AbstractChannel implements ChannelInboundHandler {
 
@@ -126,26 +126,32 @@ public class AdbChannel extends AbstractChannel implements ChannelInboundHandler
 
     @Override
     protected void doWrite(ChannelOutboundBuffer in) throws Exception {
-        for (;;) {
-            Object msg = in.current();
-            if (msg == null) {
-                // nothing left to write
-                break;
-            }
+        Object msg = in.current();
+        if (msg == null) {
+            // Directly return here so incompleteWrite(...) is not called.
+            return;
+        }
+        while (true) {
             if (msg instanceof ByteBuf) {
                 ByteBuf buf = (ByteBuf) msg;
-                int readableBytes = buf.readableBytes();
-                while (readableBytes > 0) {
-                    try {
-                        parent().writeAndFlush(new AdbPacket(Command.A_WRTE, localId, remoteId, buf));
-                    } catch (Throwable cause) {
-                        ReferenceCountUtil.safeRelease(buf);
-                    }
-                    int newReadableBytes = buf.readableBytes();
-                    in.progress(readableBytes - newReadableBytes);
-                    readableBytes = newReadableBytes;
+                if (!buf.isReadable()) {
+                    in.remove();
+                    continue;
                 }
-                in.remove();
+
+                ByteBuf payload = buf.retainedDuplicate();
+                try {
+                    int localFlushedAmount = payload.readableBytes();
+                    parent().writeAndFlush(new AdbPacket(Command.A_WRTE, localId, remoteId, payload));
+                    in.progress(localFlushedAmount);
+                    if (!buf.isReadable()) {
+                        in.remove();
+                    }
+                    break;
+                } catch (Throwable cause) {
+                    ReferenceCountUtil.safeRelease(payload);
+                    continue;
+                }
             } else {
                 in.remove(new UnsupportedOperationException(
                         "unsupported message type: " + StringUtil.simpleClassName(msg)));

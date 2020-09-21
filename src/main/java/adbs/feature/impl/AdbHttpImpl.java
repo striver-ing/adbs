@@ -1,5 +1,6 @@
 package adbs.feature.impl;
 
+import adbs.constant.Constants;
 import adbs.device.AdbDevice;
 import adbs.feature.AdbHttp;
 import com.google.common.util.concurrent.SettableFuture;
@@ -29,26 +30,28 @@ public class AdbHttpImpl implements AdbHttp {
     @Override
     public FullHttpResponse execute(FullHttpRequest request, long timeout, TimeUnit unit) throws IOException {
         SettableFuture<FullHttpResponse> future = SettableFuture.create();
-        ChannelFuture cf = device.open("tcp:" + port + "\0", channel -> {
-            channel.pipeline()
-                    .addLast(new HttpClientCodec())
-                    .addLast(new HttpObjectAggregator(8 * 1024 * 1024))
-                    .addLast(new ChannelInboundHandlerAdapter(){
+        ChannelFuture cf = device.open(
+                "tcp:" + port + "\0", Constants.DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS,
+                channel -> {
+                    channel.pipeline()
+                            .addLast(new HttpClientCodec())
+                            .addLast(new HttpObjectAggregator(8 * 1024 * 1024))
+                            .addLast(new ChannelInboundHandlerAdapter(){
 
-                        @Override
-                        public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
-                            if (msg instanceof FullHttpResponse) {
-                                future.set((FullHttpResponse) msg);
-                            } else {
-                                ctx.fireChannelRead(msg);
-                            }
-                        }
+                                @Override
+                                public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+                                    if (msg instanceof FullHttpResponse) {
+                                        future.set((FullHttpResponse) msg);
+                                    } else {
+                                        ctx.fireChannelRead(msg);
+                                    }
+                                }
 
-                        @Override
-                        public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-                            future.setException(new ClosedChannelException());
-                        }
-                    });
+                                @Override
+                                public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+                                    future.setException(new ClosedChannelException());
+                                }
+                            });
         });
         try {
             cf.channel().writeAndFlush(request).addListener(f -> {

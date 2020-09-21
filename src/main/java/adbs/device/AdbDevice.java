@@ -3,19 +3,27 @@ package adbs.device;
 import adbs.channel.AdbChannelInitializer;
 import adbs.constant.DeviceType;
 import adbs.constant.Feature;
-import adbs.feature.AdbShell;
-import adbs.feature.AdbSync;
+import adbs.entity.sync.SyncDent;
+import adbs.entity.sync.SyncStat;
 import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelInboundHandler;
+import io.netty.util.AttributeMap;
 import io.netty.util.concurrent.Future;
 
-import java.io.IOException;
-import java.util.List;
+import java.io.*;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 
-public interface AdbDevice extends AdbSync, AdbShell {
+public interface AdbDevice extends AttributeMap {
 
-    Future<?> close();
+    int DEFAULT_MODE = 0664;
+
+    /**
+     * type                print bootloader | device
+     * @return
+     */
+    DeviceType type();
 
     /**
      * serial             print <serial-number>
@@ -31,42 +39,71 @@ public interface AdbDevice extends AdbSync, AdbShell {
 
     Set<Feature> features();
 
-    /**
-     * type                print bootloader | device
-     * @return
-     */
-    DeviceType type();
+    ChannelFuture open(String destination, long timeout, TimeUnit unit, AdbChannelInitializer initializer);
+
+    <R> Future<R> exec(String destination, long timeout, TimeUnit unit, Function<String, R> function);
+
+    default Future<String> exec(String destination, long timeout, TimeUnit unit) {
+        return exec(destination, timeout, unit, result -> result);
+    }
+
+    Future<String> shell(String cmd, String... args);
+
+    ChannelFuture shell(boolean lineFramed, ChannelInboundHandler handler);
+
+    Future<SyncStat> stat(String path);
+
+    Future<SyncDent[]> list(String path);
+
+    Future pull(String src, OutputStream dest);
+
+    Future push(InputStream src, String dest, int mode, int mtime) throws IOException;
+
+    default Future pull(String src, File dest) throws IOException {
+        FileOutputStream os = new FileOutputStream(dest);
+        try {
+            return pull(src, os);
+        } finally {
+            os.flush();
+            os.close();
+        }
+    }
+
+    default Future push(File src, String dest) throws IOException {
+        FileInputStream is = new FileInputStream(src);
+        try {
+            Long mtime = src.lastModified() / 1000;
+            return push(is, dest, DEFAULT_MODE, mtime.intValue());
+        } finally {
+            is.close();
+        }
+    }
 
     /**
      * root                     restart adbd with root permissions
-     * @throws IOException
      */
-    void root() throws IOException;
+    Future root();
 
     /**
      * unroot                   restart adbd without root permissions
-     * @throws IOException
      */
-    void unroot() throws IOException;
+    Future unroot();
 
     /**
      * remount [-R]
      *      remount partitions read-write. if a reboot is required, -R will
      *      will automatically reboot the device.
-     * @throws IOException
      */
-    void remount() throws IOException;
+    Future remount();
 
-    String exec(String destination, long timeout, TimeUnit unit) throws IOException;
+    Future reverse(String destination, AdbChannelInitializer initializer);
 
-    ChannelFuture open(String destination, AdbChannelInitializer initializer) throws IOException;
+    Future<String[]> reverseList();
 
-    void reverse(String destination, AdbChannelInitializer initializer) throws IOException;
+    Future reverseRemove(String destination);
 
-    List<String> reverseList() throws IOException;
+    Future reverseRemoveAll();
 
-    void reverseRemove(String destination) throws IOException;
-
-    void reverseRemoveAll() throws IOException;
+    ChannelFuture close();
 
 }

@@ -178,6 +178,8 @@ public class TestAdbDevice {
     public static void main(String[] args) throws Exception {
         AbstractAdbDevice device = SocketAdbDevice.connect("192.168.137.122", 5555);
         device.connect();
+        device.close();
         String result = device.shell("ls", "-l", "/").get();
+        System.out.println(result);
     }
 }

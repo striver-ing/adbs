@@ -211,8 +211,10 @@ public abstract class AbstractAdbDevice implements AdbDevice {
         this.connection = cf.channel();
         cf.addListener(f -> {
             if (f.cause() != null) {
-                connectPromise.setFailure(f.cause());
-                connectPromise = null;
+                if (connectPromise != null) {
+                    connectPromise.setFailure(f.cause());
+                    connectPromise = null;
+                }
             }
         });
 

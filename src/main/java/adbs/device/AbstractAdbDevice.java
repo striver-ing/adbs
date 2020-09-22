@@ -187,6 +187,7 @@ public abstract class AbstractAdbDevice implements AdbDevice {
                                 device = result.getDevice();
                                 features = result.getFeatures();
                                 ctx.pipeline().addAfter("codec", "processor", new AdbChannelProcessor(AbstractAdbDevice.this, channelIdGen, reverseMap));
+                                logger.debug("[{}] connected", serial);
                                 connectPromise.setSuccess(null);
                             }
                             ctx.fireUserEventTriggered(evt);
@@ -427,51 +428,52 @@ public abstract class AbstractAdbDevice implements AdbDevice {
     public Future pull(String src, OutputStream dest) {
         ensureConnect();
         Promise promise = new DefaultPromise<>(eventLoop());
-        open(
-                "sync:\0", DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS,
-                channel -> {
-                    channel.pipeline()
-                            .addLast(new SyncDataDecoder())
-                            .addLast(new SyncEncoder())
-                            .addLast(new ChannelInboundHandlerAdapter(){
+        ChannelFuture cf = open(
+            "sync:\0", DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS,
+            channel -> {
+                channel.pipeline()
+                        .addLast(new SyncDataDecoder())
+                        .addLast(new SyncEncoder())
+                        .addLast(new ChannelInboundHandlerAdapter(){
 
-                                @Override
-                                public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
-                                    if (msg instanceof SyncFail) {
-                                        promise.setFailure(new RemoteException(((SyncFail) msg).error));
-                                    } else if (msg instanceof SyncData) {
-                                        ByteBuf buf = ((SyncData) msg).data;
-                                        try {
-                                            int size = buf.readableBytes();
-                                            if (size > 0) {
-                                                buf.readBytes(dest, size);
-                                            }
-                                        } catch (Throwable cause) {
-                                            promise.setFailure(cause);
-                                        } finally {
-                                            ReferenceCountUtil.safeRelease(msg);
+                            @Override
+                            public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+                                if (msg instanceof SyncFail) {
+                                    promise.setFailure(new RemoteException(((SyncFail) msg).error));
+                                } else if (msg instanceof SyncData) {
+                                    ByteBuf buf = ((SyncData) msg).data;
+                                    try {
+                                        int size = buf.readableBytes();
+                                        if (size > 0) {
+                                            buf.readBytes(dest, size);
                                         }
-                                    } else if (msg instanceof SyncDataDone) {
-                                        promise.setSuccess(null);
-                                        ctx.writeAndFlush(new SyncQuit());
-                                    } else {
-                                        promise.setFailure(new ProtocolException("Error reply:" + msg));
+                                    } catch (Throwable cause) {
+                                        promise.setFailure(cause);
+                                    } finally {
+                                        ReferenceCountUtil.safeRelease(msg);
                                     }
+                                } else if (msg instanceof SyncDataDone) {
+                                    promise.setSuccess(null);
+                                    ctx.writeAndFlush(new SyncQuit());
+                                } else {
+                                    promise.setFailure(new ProtocolException("Error reply:" + msg));
                                 }
-                            });
-                })
-                .addListener(f -> {
-                    if (f.cause() != null) {
-                        promise.setFailure(f.cause());
-                    }
-                })
-                .channel()
-                .writeAndFlush(new SyncPath(SyncID.RECV_V1, src))
-                .addListener(f -> {
-                    if (f.cause() != null) {
-                        promise.setFailure(f.cause());
-                    }
-                });
+                            }
+                        });
+        });
+        cf.addListener(f0 -> {
+            if (f0.cause() != null) {
+                promise.setFailure(f0.cause());
+            } else {
+                cf.channel()
+                        .writeAndFlush(new SyncPath(SyncID.RECV_V1, src))
+                        .addListener(f -> {
+                            if (f.cause() != null) {
+                                promise.setFailure(f.cause());
+                            }
+                        });
+            }
+        });
         return promise;
     }
 
@@ -533,7 +535,8 @@ public abstract class AbstractAdbDevice implements AdbDevice {
                             });
                     while (buffer.isReadable()) {
                         int size = Math.min(SYNC_DATA_MAX, buffer.readableBytes());
-                        cf.channel().writeAndFlush(buffer.readSlice(size))
+                        ByteBuf data = buffer.readSlice(size).retain();
+                        cf.channel().writeAndFlush(new SyncData(data))
                                 .addListener(f2 -> {
                                     if (f2.cause() != null) {
                                         promise.setFailure(f2.cause());

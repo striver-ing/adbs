@@ -1,6 +1,5 @@
 package adbs.device;
 
-import adbs.channel.AdbChannel;
 import adbs.channel.AdbChannelInitializer;
 import adbs.util.AuthUtil;
 import adbs.util.ChannelFactory;

@@ -16,8 +16,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
-import static io.netty.channel.internal.ChannelUtils.WRITE_STATUS_SNDBUF_FULL;
-
 public class AdbChannel extends AbstractChannel implements ChannelInboundHandler {
 
     private static final Logger logger = LoggerFactory.getLogger(AdbChannel.class);
@@ -27,8 +25,6 @@ public class AdbChannel extends AbstractChannel implements ChannelInboundHandler
     private final ChannelConfig config;
 
     private final ChannelMetadata metadata;
-
-    private volatile ChannelHandlerContext context;
 
     private volatile ChannelPromise connectPromise;
 
@@ -53,10 +49,6 @@ public class AdbChannel extends AbstractChannel implements ChannelInboundHandler
         this.config.setConnectTimeoutMillis(parent.config().getConnectTimeoutMillis());
         this.config.setAutoClose(parent.config().isAutoClose());
         this.config.setAutoRead(parent.config().isAutoRead());
-    }
-
-    public ChannelHandlerContext context() {
-        return this.context;
     }
 
     @Override
@@ -128,7 +120,6 @@ public class AdbChannel extends AbstractChannel implements ChannelInboundHandler
     protected void doWrite(ChannelOutboundBuffer in) throws Exception {
         Object msg = in.current();
         if (msg == null) {
-            // Directly return here so incompleteWrite(...) is not called.
             return;
         }
         while (true) {
@@ -139,19 +130,19 @@ public class AdbChannel extends AbstractChannel implements ChannelInboundHandler
                     continue;
                 }
 
-                ByteBuf payload = buf.retainedDuplicate();
+                int localFlushedAmount = buf.readableBytes();
                 try {
-                    int localFlushedAmount = payload.readableBytes();
-                    parent().writeAndFlush(new AdbPacket(Command.A_WRTE, localId, remoteId, payload));
-                    in.progress(localFlushedAmount);
-                    if (!buf.isReadable()) {
-                        in.remove();
-                    }
-                    break;
-                } catch (Throwable cause) {
-                    ReferenceCountUtil.safeRelease(payload);
-                    continue;
+                    buf.retain();
+                    parent().writeAndFlush(new AdbPacket(Command.A_WRTE, localId, remoteId, buf));
+                } catch (Exception e) {
+                    ReferenceCountUtil.safeRelease(buf);
+                    throw e;
                 }
+                in.progress(localFlushedAmount);
+                if (!buf.isReadable()) {
+                    in.remove();
+                }
+                break;
             } else {
                 in.remove(new UnsupportedOperationException(
                         "unsupported message type: " + StringUtil.simpleClassName(msg)));
@@ -219,13 +210,11 @@ public class AdbChannel extends AbstractChannel implements ChannelInboundHandler
                         if (connectPromise == null) {
                             return;
                         }
+                        this.remoteId = packet.arg0;
+                        this.eventLoop.register(this);
                         boolean promiseSet = connectPromise.trySuccess();
                         if (!promiseSet) {
                             close(voidPromise());
-                        } else {
-                            this.remoteId = packet.arg0;
-                            this.context = ctx;
-                            this.eventLoop.register(this);
                         }
                     } else {
                         pipeline().fireUserEventTriggered("ACK");
@@ -337,7 +326,7 @@ public class AdbChannel extends AbstractChannel implements ChannelInboundHandler
                 if (buf != null) {
                     ReferenceCountUtil.safeRelease(buf);
                 }
-                promise.tryFailure(annotateConnectException(t, remoteAddress));
+                connectPromise.tryFailure(annotateConnectException(t, remoteAddress));
                 closeIfClosed();
             }
         }

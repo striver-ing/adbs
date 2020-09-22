@@ -98,6 +98,8 @@ public interface AdbDevice extends AttributeMap {
 
     Future reverse(String destination, AdbChannelInitializer initializer);
 
+    Future reverse(String remote, String local);
+
     Future<String[]> reverseList();
 
     Future reverseRemove(String destination);

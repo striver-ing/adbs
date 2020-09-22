@@ -1,5 +1,7 @@
 package adbs.device;
 
+import adbs.channel.AdbChannel;
+import adbs.channel.AdbChannelInitializer;
 import adbs.util.AuthUtil;
 import adbs.util.ChannelFactory;
 import io.netty.bootstrap.Bootstrap;
@@ -7,6 +9,7 @@ import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,7 +58,7 @@ public class SocketAdbDevice extends AbstractAdbDevice {
         });
         ChannelFactory factory = new ChannelFactory() {
             @Override
-            public ChannelFuture newChannel(AbstractAdbDevice device, ChannelInitializer initializer) {
+            public ChannelFuture newChannel(AbstractAdbDevice device, AdbChannelInitializer initializer) {
                 Bootstrap bootstrap = new Bootstrap();
                 return bootstrap.group(executors)
                         .channel(NioSocketChannel.class)
@@ -65,7 +68,12 @@ public class SocketAdbDevice extends AbstractAdbDevice {
                         .option(ChannelOption.SO_LINGER, 3)
                         .option(ChannelOption.SO_REUSEADDR, true)
                         .option(ChannelOption.AUTO_CLOSE, true)
-                        .handler(initializer)
+                        .handler(new ChannelInitializer<SocketChannel>() {
+                            @Override
+                            protected void initChannel(SocketChannel ch) throws Exception {
+                                initializer.initChannel(ch);
+                            }
+                        })
                         .connect(host, port);
             }
         };

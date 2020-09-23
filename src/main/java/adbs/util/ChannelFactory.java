@@ -1,12 +1,13 @@
 package adbs.util;
 
 import adbs.channel.AdbChannelInitializer;
-import adbs.device.AbstractAdbDevice;
+import adbs.device.DefaultAdbDevice;
 import io.netty.channel.ChannelFuture;
+import io.netty.channel.EventLoopGroup;
 
 @FunctionalInterface
 public interface ChannelFactory {
 
-    ChannelFuture newChannel(AbstractAdbDevice device, AdbChannelInitializer initializer);
+    ChannelFuture newChannel(DefaultAdbDevice device, EventLoopGroup eventLoop, AdbChannelInitializer initializer);
 
 }

@@ -19,21 +19,17 @@ import adbs.util.ChannelUtil;
 import adbs.util.ShellUtil;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
-import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
 import io.netty.handler.codec.LineBasedFrameDecoder;
 import io.netty.handler.codec.string.StringDecoder;
 import io.netty.handler.codec.string.StringEncoder;
-import io.netty.util.Attribute;
-import io.netty.util.AttributeKey;
+import io.netty.util.DefaultAttributeMap;
 import io.netty.util.ReferenceCountUtil;
 import io.netty.util.concurrent.DefaultPromise;
 import io.netty.util.concurrent.Future;
-import io.netty.util.concurrent.GlobalEventExecutor;
 import io.netty.util.concurrent.Promise;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.omg.Messaging.SYNC_WITH_TRANSPORT;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -44,12 +40,10 @@ import java.net.ProtocolException;
 import java.nio.channels.ClosedChannelException;
 import java.nio.charset.StandardCharsets;
 import java.security.interfaces.RSAPrivateCrtKey;
-import java.util.LinkedList;
 import java.util.Map;
-import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -60,12 +54,12 @@ import java.util.function.Predicate;
 import static adbs.constant.Constants.DEFAULT_READ_TIMEOUT;
 import static adbs.constant.Constants.SYNC_DATA_MAX;
 
-public abstract class AbstractAdbDevice implements AdbDevice {
+public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
 
-    private static final Logger logger = LoggerFactory.getLogger(AbstractAdbDevice.class);
+    private static final Logger logger = LoggerFactory.getLogger(DefaultAdbDevice.class);
 
-    private static final AtomicReferenceFieldUpdater<AbstractAdbDevice, Promise> CONNECT_PROMISE_UPDATER =
-            AtomicReferenceFieldUpdater.newUpdater(AbstractAdbDevice.class, Promise.class, "connectPromise");
+    private static final AtomicReferenceFieldUpdater<DefaultAdbDevice, Promise> CONNECT_PROMISE_UPDATER =
+            AtomicReferenceFieldUpdater.newUpdater(DefaultAdbDevice.class, Promise.class, "connectPromise");
 
     private final String serial;
 
@@ -74,6 +68,8 @@ public abstract class AbstractAdbDevice implements AdbDevice {
     private final byte[] publicKey;
 
     private final ChannelFactory factory;
+
+    private final EventLoopGroup eventLoop;
 
     private final Map<CharSequence, AdbChannelInitializer> reverseMap;
 
@@ -94,13 +90,17 @@ public abstract class AbstractAdbDevice implements AdbDevice {
 
     private volatile Promise connectPromise;
 
-    protected AbstractAdbDevice(String serial, RSAPrivateCrtKey privateKey, byte[] publicKey, ChannelFactory factory) {
+    private volatile ScheduledFuture connectTimeoutFuture;
+
+    public DefaultAdbDevice(String serial, RSAPrivateCrtKey privateKey, byte[] publicKey, ChannelFactory factory, EventLoopGroup eventLoop) {
         this.serial = serial;
         this.privateKey = privateKey;
         this.publicKey = publicKey;
         this.factory = factory;
+        this.eventLoop = eventLoop;
         this.reverseMap = new ConcurrentHashMap<>();
         this.channelIdGen = new AtomicInteger(1);
+        this.connect();
     }
 
     @Override
@@ -133,45 +133,24 @@ public abstract class AbstractAdbDevice implements AdbDevice {
         return type;
     }
 
-    private void ensureConnect() {
-        if (this.connectPromise == null || this.connection == null) {
-            throw new RuntimeException("not connect");
-        }
-    }
-
-    @Override
-    public <T> Attribute<T> attr(AttributeKey<T> key) {
-        ensureConnect();
-        return this.connection.attr(key);
-    }
-
-    @Override
-    public <T> boolean hasAttr(AttributeKey<T> key) {
-        ensureConnect();
-        return this.connection.hasAttr(key);
-    }
-
     public ChannelPipeline pipeline() {
-        ensureConnect();
         return this.connection.pipeline();
     }
 
     public ByteBufAllocator alloc() {
-        ensureConnect();
         return this.connection.alloc();
     }
 
-    public EventLoop eventLoop() {
-        ensureConnect();
-        return this.connection.eventLoop();
+    public EventLoopGroup eventLoop() {
+        return eventLoop;
     }
 
     public Future connect() {
         if (!CONNECT_PROMISE_UPDATER.compareAndSet(
-                this, null, new DefaultPromise(GlobalEventExecutor.INSTANCE))) {
+                this, null, new DefaultPromise(eventLoop().next()))) {
             return connectPromise;
         }
-        ChannelFuture cf = factory.newChannel(this, ch -> {
+        ChannelFuture cf = factory.newChannel(this, eventLoop(), ch -> {
             ch.pipeline()
                     .addLast("codec", new AdbPacketCodec())
                     .addLast("auth", new AdbAuthHandler(privateKey, publicKey))
@@ -186,8 +165,7 @@ public abstract class AbstractAdbDevice implements AdbDevice {
                                 product = result.getProduct();
                                 device = result.getDevice();
                                 features = result.getFeatures();
-                                ctx.pipeline().addAfter("codec", "processor", new AdbChannelProcessor(AbstractAdbDevice.this, channelIdGen, reverseMap));
-                                logger.debug("[{}] connected", serial);
+                                ctx.pipeline().addAfter("codec", "processor", new AdbChannelProcessor(DefaultAdbDevice.this, channelIdGen, reverseMap));
                                 connectPromise.setSuccess(null);
                             }
                             ctx.fireUserEventTriggered(evt);
@@ -196,32 +174,42 @@ public abstract class AbstractAdbDevice implements AdbDevice {
                         @Override
                         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
                             ctx.pipeline().remove(this);
-                            connectPromise.tryFailure(cause);
+                            connectFail(cause);
                             ctx.fireExceptionCaught(cause);
                         }
 
                         @Override
                         public void channelInactive(ChannelHandlerContext ctx) throws Exception {
                             ctx.pipeline().remove(this);
-                            connectPromise.tryFailure(new ClosedChannelException());
+                            connectFail(null);
                             ctx.fireChannelInactive();
                         }
                     });
         });
 
         this.connection = cf.channel();
+
         cf.addListener(f -> {
             if (f.cause() != null) {
-                if (connectPromise != null) {
-                    connectPromise.setFailure(f.cause());
-                    connectPromise = null;
-                }
+                connectFail(f.cause());
             }
         });
 
+        int connectTimeoutMillis = connection.config().getConnectTimeoutMillis();
+        if (connectTimeoutMillis > 0) {
+            connectTimeoutFuture = eventLoop().schedule(() -> {
+                ConnectTimeoutException cause =
+                        new ConnectTimeoutException("connection timed out: " + serial);
+                connectFail(cause);
+            }, connectTimeoutMillis, TimeUnit.MILLISECONDS);
+        }
+
         connectPromise.addListener(f -> {
             if (f.cause() != null || f.isCancelled()) {
-                close();
+                logger.error("[{}] device connect failed", serial);
+                close0();
+            } else {
+                logger.info("[{}] device connected", serial);
             }
         });
 
@@ -231,7 +219,6 @@ public abstract class AbstractAdbDevice implements AdbDevice {
     @Override
     public ChannelFuture open(String destination, long timeout, TimeUnit unit, AdbChannelInitializer initializer) {
         Long timeoutMs = unit.toMillis(timeout);
-        ensureConnect();
         int localId = channelIdGen.getAndIncrement();
         String channelName = ChannelUtil.getChannelName(localId);
         AdbChannel channel = new AdbChannel(connection, localId, 0);
@@ -263,7 +250,7 @@ public abstract class AbstractAdbDevice implements AdbDevice {
     }
 
     private <R> Future<R> exec(String destination, long timeout, TimeUnit unit, Function<String, R> function, ChannelHandler... handlers) {
-        Promise<R> promise = new DefaultPromise<>(eventLoop());
+        Promise<R> promise = new DefaultPromise<>(eventLoop().next());
         StringBuilder sb = new StringBuilder();
         ChannelFuture cf = open(destination, timeout, unit, channel -> {
             channel.pipeline()
@@ -341,8 +328,7 @@ public abstract class AbstractAdbDevice implements AdbDevice {
 
     @Override
     public Future<SyncStat> stat(String path) {
-        ensureConnect();
-        Promise<SyncStat> promise = new DefaultPromise<>(eventLoop());
+        Promise<SyncStat> promise = new DefaultPromise<>(eventLoop().next());
         ChannelFuture cf = open(
             "sync:\0", DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS,
             channel -> {
@@ -383,8 +369,7 @@ public abstract class AbstractAdbDevice implements AdbDevice {
 
     @Override
     public Future<SyncDent[]> list(String path) {
-        ensureConnect();
-        Promise<SyncDent[]> promise = new DefaultPromise<>(eventLoop());
+        Promise<SyncDent[]> promise = new DefaultPromise<>(eventLoop().next());
         ChannelFuture cf = open(
             "sync:\0", DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS,
             channel -> {
@@ -426,8 +411,7 @@ public abstract class AbstractAdbDevice implements AdbDevice {
 
     @Override
     public Future pull(String src, OutputStream dest) {
-        ensureConnect();
-        Promise promise = new DefaultPromise<>(eventLoop());
+        Promise promise = new DefaultPromise<>(eventLoop().next());
         ChannelFuture cf = open(
             "sync:\0", DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS,
             channel -> {
@@ -479,7 +463,6 @@ public abstract class AbstractAdbDevice implements AdbDevice {
 
     @Override
     public Future push(InputStream src, String dest, int mode, int mtime) throws IOException {
-        ensureConnect();
         ByteBuf buffer = alloc().buffer(8192);
         try {
             while (true) {
@@ -500,7 +483,7 @@ public abstract class AbstractAdbDevice implements AdbDevice {
             }
         }
         String destAndMode = dest + "," + mode;
-        Promise promise = new DefaultPromise<>(eventLoop());
+        Promise promise = new DefaultPromise<>(eventLoop().next());
         ChannelFuture cf = open(
             "sync:\0", DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS,
             channel -> {
@@ -571,7 +554,7 @@ public abstract class AbstractAdbDevice implements AdbDevice {
      * @return
      */
     private Future exec(String destination, long timeout, TimeUnit unit, Predicate<String> predicate) {
-        Promise promise = new DefaultPromise(eventLoop());
+        Promise promise = new DefaultPromise(eventLoop().next());
         ChannelInboundHandlerAdapter reconnectHandler = new ChannelInboundHandlerAdapter() {
             @Override
             public void channelInactive(ChannelHandlerContext ctx) throws Exception {
@@ -722,18 +705,39 @@ public abstract class AbstractAdbDevice implements AdbDevice {
         );
     }
 
-    protected abstract void doClose();
+    protected void doClose() {
 
-    @Override
-    public ChannelFuture close() {
+    }
+
+    private void connectFail(Throwable cause) {
+        Promise promise = connectPromise;
+        if (promise != null) {
+            promise.tryFailure(cause == null ? new ClosedChannelException() : cause);
+        }
+    }
+
+    public ChannelFuture close0() {
         this.connectPromise = null;
         return this.connection.close().addListener(f -> {
             doClose();
             if (f.cause() == null) {
-                logger.info("connection `{}` closed", serial);
+                logger.info("[{}] connection closed", serial);
             } else {
-                logger.error("connection `{}` close error:{}", serial, f.cause().getMessage(), f.cause());
+                logger.error("[{}] connection close error:{}", serial, f.cause().getMessage(), f.cause());
             }
+        });
+    }
+
+    @Override
+    public ChannelFuture close() {
+        return close0().addListener(f0 -> {
+            eventLoop.shutdownGracefully().addListener(f1 -> {
+                if (f1.cause() == null) {
+                    logger.info("[{}] event loop terminated", serial);
+                } else {
+                    logger.error("[{}] event loop shutdown error:{}", serial, f1.cause().getMessage(), f1.cause());
+                }
+            });
         });
     }
 }

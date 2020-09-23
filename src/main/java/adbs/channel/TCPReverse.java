@@ -11,9 +11,9 @@ public class TCPReverse implements AdbChannelInitializer {
 
     private final int port;
 
-    private final EventLoop eventLoop;
+    private final EventLoopGroup eventLoop;
 
-    public TCPReverse(String host, int port, EventLoop eventLoop) {
+    public TCPReverse(String host, int port, EventLoopGroup eventLoop) {
         this.host = host;
         this.port = port;
         this.eventLoop = eventLoop;

@@ -7,6 +7,7 @@ import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
+import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
@@ -16,7 +17,7 @@ import org.slf4j.LoggerFactory;
 import java.nio.charset.StandardCharsets;
 import java.security.interfaces.RSAPrivateCrtKey;
 
-public class SocketAdbDevice extends AbstractAdbDevice {
+public class SocketAdbDevice {
 
     private static final Logger logger = LoggerFactory.getLogger(SocketAdbDevice.class);
 
@@ -32,34 +33,16 @@ public class SocketAdbDevice extends AbstractAdbDevice {
         }
     }
 
-    private final NioEventLoopGroup executors;
-
-    private SocketAdbDevice(String serial, RSAPrivateCrtKey privateKey, byte[] publicKey, NioEventLoopGroup executors, ChannelFactory factory) {
-        super(serial, privateKey, publicKey, factory);
-        this.executors = executors;
-    }
-
-    @Override
-    protected void doClose() {
-        this.executors.shutdownGracefully().addListener(f -> {
-            if (f.cause() == null) {
-                logger.info("`{}` executor terminated", serial());
-            } else {
-                logger.error("`{}` executor terminate error:{}", serial(), f.cause().getMessage(), f.cause());
-            }
-        });
-    }
-
-    public static SocketAdbDevice connect(String host, Integer port) {
+    public static DefaultAdbDevice connect(String host, Integer port) {
         String serial = host + ":" + port;
         NioEventLoopGroup executors = new NioEventLoopGroup(1, r -> {
             return new Thread(r, "Connection-" + serial);
         });
         ChannelFactory factory = new ChannelFactory() {
             @Override
-            public ChannelFuture newChannel(AbstractAdbDevice device, AdbChannelInitializer initializer) {
+            public ChannelFuture newChannel(DefaultAdbDevice device, EventLoopGroup eventLoop, AdbChannelInitializer initializer) {
                 Bootstrap bootstrap = new Bootstrap();
-                return bootstrap.group(executors)
+                return bootstrap.group(eventLoop)
                         .channel(NioSocketChannel.class)
                         .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 30000)
                         .option(ChannelOption.SO_KEEPALIVE, true)
@@ -76,7 +59,7 @@ public class SocketAdbDevice extends AbstractAdbDevice {
                         .connect(host, port);
             }
         };
-        return new SocketAdbDevice(serial, privateKey, publicKey, executors, factory);
+        return new DefaultAdbDevice(serial, privateKey, publicKey, factory, executors);
     }
 
 }

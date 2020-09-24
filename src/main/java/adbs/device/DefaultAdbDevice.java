@@ -61,6 +61,9 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
     private static final AtomicReferenceFieldUpdater<DefaultAdbDevice, Promise> CONNECT_PROMISE_UPDATER =
             AtomicReferenceFieldUpdater.newUpdater(DefaultAdbDevice.class, Promise.class, "connectPromise");
 
+    private static final AtomicReferenceFieldUpdater<DefaultAdbDevice, Promise> CLOSE_PROMISE_UPDATER =
+            AtomicReferenceFieldUpdater.newUpdater(DefaultAdbDevice.class, Promise.class, "closePromise");
+
     private final String serial;
 
     private final RSAPrivateCrtKey privateKey;
@@ -91,6 +94,8 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
     private volatile Promise connectPromise;
 
     private volatile ScheduledFuture connectTimeoutFuture;
+
+    private volatile Promise closePromise;
 
     public DefaultAdbDevice(String serial, RSAPrivateCrtKey privateKey, byte[] publicKey, ChannelFactory factory, EventLoopGroup eventLoop) {
         this.serial = serial;
@@ -166,7 +171,10 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
                                 device = result.getDevice();
                                 features = result.getFeatures();
                                 ctx.pipeline().addAfter("codec", "processor", new AdbChannelProcessor(DefaultAdbDevice.this, channelIdGen, reverseMap));
-                                connectPromise.setSuccess(null);
+                                Promise promise = connectPromise;
+                                if (promise != null) {
+                                    connectPromise.setSuccess(null);
+                                }
                             }
                             ctx.fireUserEventTriggered(evt);
                         }
@@ -716,20 +724,26 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
         }
     }
 
-    public ChannelFuture close0() {
+    public Future close0() {
+        if (!CLOSE_PROMISE_UPDATER.compareAndSet(this, null, new DefaultPromise(eventLoop().next()))) {
+            return closePromise;
+        }
         this.connectPromise = null;
-        return this.connection.close().addListener(f -> {
-            doClose();
-            if (f.cause() == null) {
-                logger.info("[{}] connection closed", serial);
-            } else {
+        this.connection.close().addListener(f -> {
+            if (f.cause() != null) {
+                closePromise.tryFailure(f.cause());
                 logger.error("[{}] connection close error:{}", serial, f.cause().getMessage(), f.cause());
+            } else {
+                closePromise.trySuccess(null);
+                logger.info("[{}] connection closed", serial);
             }
+            doClose();
         });
+        return closePromise;
     }
 
     @Override
-    public ChannelFuture close() {
+    public Future close() {
         return close0().addListener(f0 -> {
             eventLoop.shutdownGracefully().addListener(f1 -> {
                 if (f1.cause() == null) {

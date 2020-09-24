@@ -106,6 +106,6 @@ public interface AdbDevice extends AttributeMap {
 
     Future reverseRemoveAll();
 
-    ChannelFuture close();
+    Future close();
 
 }

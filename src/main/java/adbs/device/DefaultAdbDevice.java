@@ -214,10 +214,7 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
 
         connectPromise.addListener(f -> {
             if (f.cause() != null || f.isCancelled()) {
-                logger.error("[{}] device connect failed", serial);
                 close0();
-            } else {
-                logger.info("[{}] device connected", serial);
             }
         });
 

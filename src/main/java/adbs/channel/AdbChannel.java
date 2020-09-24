@@ -5,6 +5,7 @@ import adbs.entity.AdbPacket;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.*;
 import io.netty.util.ReferenceCountUtil;
+import io.netty.util.concurrent.Promise;
 import io.netty.util.internal.StringUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -107,7 +108,6 @@ public class AdbChannel extends AbstractChannel implements ChannelInboundHandler
             parent().writeAndFlush(new AdbPacket(Command.A_CLSE, localId, remoteId));
         }
         localId = remoteId = 0;
-        pipeline().fireChannelInactive();
         parent().pipeline().remove(this);
     }
 
@@ -142,11 +142,11 @@ public class AdbChannel extends AbstractChannel implements ChannelInboundHandler
                 if (!buf.isReadable()) {
                     in.remove();
                 }
-                break;
             } else {
                 in.remove(new UnsupportedOperationException(
                         "unsupported message type: " + StringUtil.simpleClassName(msg)));
             }
+            break;
         }
     }
 
@@ -178,19 +178,16 @@ public class AdbChannel extends AbstractChannel implements ChannelInboundHandler
     //ChannelInboundHandler
     @Override
     public void channelRegistered(ChannelHandlerContext ctx) throws Exception {
-        pipeline().fireChannelRegistered();
         ctx.fireChannelRegistered();
     }
 
     @Override
     public void channelUnregistered(ChannelHandlerContext ctx) throws Exception {
-        pipeline().fireChannelUnregistered();
         ctx.fireChannelUnregistered();
     }
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
-        pipeline().fireChannelActive();
         ctx.fireChannelActive();
     }
 
@@ -207,14 +204,15 @@ public class AdbChannel extends AbstractChannel implements ChannelInboundHandler
             switch (packet.command) {
                 case A_OKAY:
                     if (!isActive()) {
-                        if (connectPromise == null) {
+                        ChannelPromise promise = this.connectPromise;
+                        if (promise == null) {
                             return;
                         }
                         this.remoteId = packet.arg0;
                         this.eventLoop.register(this);
-                        boolean promiseSet = connectPromise.trySuccess();
+                        boolean promiseSet = promise.trySuccess();
                         if (!promiseSet) {
-                            close(voidPromise());
+                            close();
                         }
                     } else {
                         pipeline().fireUserEventTriggered("ACK");
@@ -226,8 +224,6 @@ public class AdbChannel extends AbstractChannel implements ChannelInboundHandler
                     break;
 
                 case A_CLSE:
-                    //提前将remoteId置为0，这样isActive方法就返回false，避免重复发送
-                    this.remoteId = 0;
                     close();
                     break;
 
@@ -239,13 +235,11 @@ public class AdbChannel extends AbstractChannel implements ChannelInboundHandler
 
     @Override
     public void channelReadComplete(ChannelHandlerContext ctx) throws Exception {
-        pipeline().fireChannelReadComplete();
         ctx.fireChannelReadComplete();
     }
 
     @Override
     public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
-        pipeline().fireUserEventTriggered(evt);
         ctx.fireUserEventTriggered(evt);
     }
 

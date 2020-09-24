@@ -231,14 +231,14 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
         String channelName = ChannelUtil.getChannelName(localId);
         AdbChannel channel = new AdbChannel(connection, localId, 0);
         channel.config().setConnectTimeoutMillis(timeoutMs.intValue());
-        initializer.initChannel(channel);
-        connection.pipeline().addLast(channelName, channel);
         try {
             ChannelPromise promise = new DefaultChannelPromise(channel);
             connectPromise.addListener(f0 -> {
                 if (f0.cause() != null) {
                     promise.setFailure(f0.cause());
                 } else {
+                    initializer.initChannel(channel);
+                    connection.pipeline().addLast(channelName, channel);
                     channel.connect(new AdbChannelAddress(destination, localId))
                             .addListener(f1 -> {
                                 if (f1.cause() != null) {
@@ -312,18 +312,27 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
 
     @Override
     public Future<String> shell(String cmd, String... args) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("shell:");
-        if (cmd != null) {
-            sb.append(ShellUtil.buildCmdLine(cmd, args));
-        }
-        sb.append("\0");
-        return exec(sb.toString(), DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS);
+        String shellCmd = ShellUtil.buildShellCmd(cmd, args);
+        return exec(shellCmd, DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS);
     }
 
     @Override
     public ChannelFuture shell(boolean lineFramed, ChannelInboundHandler handler) {
         return open("shell:\0", DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS, channel -> {
+            if (lineFramed) {
+                channel.pipeline().addLast(new LineBasedFrameDecoder(8192));
+            }
+            channel.pipeline()
+                    .addLast(new StringDecoder(StandardCharsets.UTF_8))
+                    .addLast(new StringEncoder(StandardCharsets.UTF_8))
+                    .addLast(handler);
+        });
+    }
+
+    @Override
+    public ChannelFuture shell(String cmd, String[] args, boolean lineFramed, ChannelInboundHandler handler) {
+        String shellCmd = ShellUtil.buildShellCmd(cmd, args);
+        return open(shellCmd, DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS, channel -> {
             if (lineFramed) {
                 channel.pipeline().addLast(new LineBasedFrameDecoder(8192));
             }

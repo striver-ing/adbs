@@ -51,6 +51,8 @@ public interface AdbDevice extends AttributeMap {
 
     ChannelFuture shell(boolean lineFramed, ChannelInboundHandler handler);
 
+    ChannelFuture shell(String cmd, String[] args, boolean lineFramed, ChannelInboundHandler handler);
+
     Future<SyncStat> stat(String path);
 
     Future<SyncDent[]> list(String path);

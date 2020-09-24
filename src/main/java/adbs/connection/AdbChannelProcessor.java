@@ -7,6 +7,7 @@ import adbs.constant.Command;
 import adbs.device.AdbDevice;
 import adbs.entity.AdbPacket;
 import adbs.util.ChannelUtil;
+import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandler;
 import io.netty.channel.ChannelInboundHandlerAdapter;
@@ -52,6 +53,8 @@ public class AdbChannelProcessor extends ChannelInboundHandlerAdapter {
             handler.channelRead(channelContext, message);
             return true;
         } else {
+            //这里将引用释放掉，避免泄漏
+            ReferenceCountUtil.safeRelease(message);
             return false;
         }
     }
@@ -102,8 +105,13 @@ public class AdbChannelProcessor extends ChannelInboundHandlerAdapter {
                 break;
 
             case A_CLSE:
-                ctx.writeAndFlush(new AdbPacket(Command.A_CLSE, message.arg1, message.arg0));
-                fireChannelMessage(ctx, message);
+                /**
+                 * 如果成功转发了事件，那么AdbChannel#doClose的时候已经发送了CLSE命令了，不需要重复发送
+                 * @see AdbChannel#doClose()
+                 */
+                if (!fireChannelMessage(ctx, message)) {
+                    ctx.writeAndFlush(new AdbPacket(Command.A_CLSE, message.arg1, message.arg0));
+                }
                 break;
 
             default:

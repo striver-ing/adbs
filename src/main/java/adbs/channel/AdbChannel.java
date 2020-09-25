@@ -3,6 +3,7 @@ package adbs.channel;
 import adbs.constant.Command;
 import adbs.entity.AdbPacket;
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufUtil;
 import io.netty.channel.*;
 import io.netty.util.ReferenceCountUtil;
 import io.netty.util.concurrent.Promise;
@@ -10,9 +11,12 @@ import io.netty.util.internal.StringUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.net.SocketAddress;
+import java.nio.ByteBuffer;
 import java.nio.channels.ClosedChannelException;
 import java.nio.channels.ConnectionPendingException;
+import java.nio.channels.WritableByteChannel;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -141,6 +145,26 @@ public class AdbChannel extends AbstractChannel implements ChannelInboundHandler
                 in.progress(localFlushedAmount);
                 if (!buf.isReadable()) {
                     in.remove();
+                }
+            } else if (msg instanceof FileRegion) {
+                FileRegion region = (FileRegion) msg;
+                if (region.transferred() >= region.count()) {
+                    in.remove();
+                    continue;
+                }
+                final long position = region.transferred();
+                long localFlushedAmount = region.transferTo(new AdbFileChannel(alloc()) {
+                    @Override
+                    protected void write(ByteBuf buf) {
+                        parent().writeAndFlush(new AdbPacket(Command.A_WRTE, localId, remoteId, buf));
+                    }
+                }, position);
+                if (localFlushedAmount > 0) {
+                    in.progress(localFlushedAmount);
+                    if (region.transferred() >= region.count()) {
+                        in.remove();
+                    }
+                    continue;
                 }
             } else {
                 in.remove(new UnsupportedOperationException(

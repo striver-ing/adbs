@@ -39,6 +39,15 @@ public class AdbHttpImpl implements AdbHttp {
                             .addLast(new ChannelInboundHandlerAdapter(){
 
                                 @Override
+                                public void channelActive(ChannelHandlerContext ctx) throws Exception {
+                                    ctx.writeAndFlush(request).addListener(f -> {
+                                        if (f.cause() != null) {
+                                            future.setException(f.cause());
+                                        }
+                                    });
+                                }
+
+                                @Override
                                 public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
                                     if (msg instanceof FullHttpResponse) {
                                         future.set((FullHttpResponse) msg);
@@ -53,12 +62,12 @@ public class AdbHttpImpl implements AdbHttp {
                                 }
                             });
         });
+        cf.addListener(f -> {
+            if (f.cause() != null) {
+                future.setException(f.cause());
+            }
+        });
         try {
-            cf.channel().writeAndFlush(request).addListener(f -> {
-                if (f.cause() != null) {
-                    future.setException(f.cause());
-                }
-            });
             return future.get(timeout, unit);
         } catch (Throwable cause) {
             throw new IOException(cause.getMessage(), cause);

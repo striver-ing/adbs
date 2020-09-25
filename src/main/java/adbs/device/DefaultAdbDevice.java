@@ -151,8 +151,9 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
     }
 
     public Future connect() {
+        Promise promise = new DefaultPromise(eventLoop().next());
         if (!CONNECT_PROMISE_UPDATER.compareAndSet(
-                this, null, new DefaultPromise(eventLoop().next()))) {
+                this, null, promise)) {
             return connectPromise;
         }
         ChannelFuture cf = factory.newChannel(this, eventLoop(), ch -> {
@@ -171,10 +172,7 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
                                 device = result.getDevice();
                                 features = result.getFeatures();
                                 ctx.pipeline().addAfter("codec", "processor", new AdbChannelProcessor(DefaultAdbDevice.this, channelIdGen, reverseMap));
-                                Promise promise = connectPromise;
-                                if (promise != null) {
-                                    connectPromise.setSuccess(null);
-                                }
+                                promise.trySuccess(null);
                             }
                             ctx.fireUserEventTriggered(evt);
                         }
@@ -182,14 +180,14 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
                         @Override
                         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
                             ctx.pipeline().remove(this);
-                            connectFail(cause);
+                            promise.tryFailure(cause);
                             ctx.fireExceptionCaught(cause);
                         }
 
                         @Override
                         public void channelInactive(ChannelHandlerContext ctx) throws Exception {
                             ctx.pipeline().remove(this);
-                            connectFail(null);
+                            promise.tryFailure(new ClosedChannelException());
                             ctx.fireChannelInactive();
                         }
                     });
@@ -199,7 +197,7 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
 
         cf.addListener(f -> {
             if (f.cause() != null) {
-                connectFail(f.cause());
+                promise.tryFailure(f.cause());
             }
         });
 
@@ -208,17 +206,17 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
             connectTimeoutFuture = eventLoop().schedule(() -> {
                 ConnectTimeoutException cause =
                         new ConnectTimeoutException("connection timed out: " + serial);
-                connectFail(cause);
+                promise.tryFailure(cause);
             }, connectTimeoutMillis, TimeUnit.MILLISECONDS);
         }
 
-        connectPromise.addListener(f -> {
+        promise.addListener(f -> {
             if (f.cause() != null || f.isCancelled()) {
                 close0();
             }
         });
 
-        return connectPromise;
+        return promise;
     }
 
     @Override
@@ -723,29 +721,27 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
 
     }
 
-    private void connectFail(Throwable cause) {
-        Promise promise = connectPromise;
-        if (promise != null) {
-            promise.tryFailure(cause == null ? new ClosedChannelException() : cause);
-        }
-    }
-
     public Future close0() {
-        if (!CLOSE_PROMISE_UPDATER.compareAndSet(this, null, new DefaultPromise(eventLoop().next()))) {
+        Promise promise = new DefaultPromise(eventLoop().next());
+        if (!CLOSE_PROMISE_UPDATER.compareAndSet(this, null, promise)) {
             return closePromise;
         }
         this.connectPromise = null;
         this.connection.close().addListener(f -> {
             if (f.cause() != null) {
-                closePromise.tryFailure(f.cause());
+                promise.tryFailure(f.cause());
                 logger.error("[{}] connection close error:{}", serial, f.cause().getMessage(), f.cause());
             } else {
-                closePromise.trySuccess(null);
+                promise.trySuccess(null);
                 logger.info("[{}] connection closed", serial);
             }
-            doClose();
+            try {
+                doClose();
+            } finally {
+                this.closePromise = null;
+            }
         });
-        return closePromise;
+        return promise;
     }
 
     @Override

@@ -19,7 +19,7 @@ public class TestAdbDevice {
     private static final Logger logger = LoggerFactory.getLogger(TestAdbDevice.class);
 
     public static void main(String[] args) throws Exception {
-        DefaultAdbDevice device = SocketAdbDevice.connect("127.0.0.1", 6000);
-        device.reverse("tcp:1234", "tcp:www.baidu.com:80");
+        DefaultAdbDevice device = SocketAdbDevice.connect("127.0.0.1", 6001);
+        device.reverse("tcp:1234", "tcp:www.baidu.com:80").get();
     }
 }

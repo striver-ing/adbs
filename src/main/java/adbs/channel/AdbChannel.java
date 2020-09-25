@@ -118,11 +118,11 @@ public class AdbChannel extends AbstractChannel implements ChannelInboundHandler
 
     @Override
     protected void doWrite(ChannelOutboundBuffer in) throws Exception {
-        Object msg = in.current();
-        if (msg == null) {
-            return;
-        }
         while (true) {
+            Object msg = in.current();
+            if (msg == null) {
+                break;
+            }
             if (msg instanceof ByteBuf) {
                 ByteBuf buf = (ByteBuf) msg;
                 if (!buf.isReadable()) {
@@ -146,7 +146,6 @@ public class AdbChannel extends AbstractChannel implements ChannelInboundHandler
                 in.remove(new UnsupportedOperationException(
                         "unsupported message type: " + StringUtil.simpleClassName(msg)));
             }
-            break;
         }
     }
 

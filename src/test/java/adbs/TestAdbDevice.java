@@ -15,6 +15,7 @@ import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.LineBasedFrameDecoder;
 import io.netty.handler.codec.http.*;
 import io.netty.handler.codec.string.StringDecoder;
+import io.netty.util.concurrent.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,10 +32,26 @@ public class TestAdbDevice {
     private static final Logger logger = LoggerFactory.getLogger(TestAdbDevice.class);
 
     public static void main(String[] args) throws Exception {
-        InputStream is = new FileInputStream("D:\\tmp\\test.iso");
+        //InputStream is = new FileInputStream("D:\\tmp\\test.iso");
         DefaultAdbDevice device = SocketAdbDevice.connect("127.0.0.1", 6000);
-        Long now = System.currentTimeMillis() / 1000;
-        device.push(is, "/sdcard/xx.exe", AdbDevice.DEFAULT_MODE, now.intValue());
+        //Long now = System.currentTimeMillis() / 1000;
+        //device.push(is, "/sdcard/xx.exe", AdbDevice.DEFAULT_MODE, now.intValue());
+        ProgressivePromise promise = new DefaultProgressivePromise(device.eventLoop().next());
+        promise.addListener(new GenericProgressiveFutureListener() {
+            @Override
+            public void operationProgressed(ProgressiveFuture future, long progress, long total) throws Exception {
+                System.out.println("progress=" + progress + "/" + total);
+            }
+
+            @Override
+            public void operationComplete(Future future) throws Exception {
+                System.out.println(future);
+            }
+        });
+        TimeUnit.SECONDS.sleep(1);
+        promise.setProgress(1, 2);
+        TimeUnit.SECONDS.sleep(1);
+        promise.setProgress(2, 2);
 //        FullHttpRequest request = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/");
 //        ChannelFuture cf = device.open(
 //                "tcp:127.0.0.1:5555\0", Constants.DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS,

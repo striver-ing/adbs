@@ -8,6 +8,7 @@ import adbs.codec.*;
 import adbs.connection.AdbAuthHandler;
 import adbs.connection.AdbChannelProcessor;
 import adbs.connection.AdbPacketCodec;
+import adbs.constant.Constants;
 import adbs.constant.DeviceType;
 import adbs.constant.Feature;
 import adbs.constant.SyncID;
@@ -19,6 +20,8 @@ import adbs.util.ChannelUtil;
 import adbs.util.ShellUtil;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
+import io.netty.buffer.ByteBufUtil;
+import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
 import io.netty.handler.codec.LineBasedFrameDecoder;
 import io.netty.handler.codec.string.StringDecoder;
@@ -33,9 +36,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+import java.io.*;
 import java.net.ProtocolException;
 import java.nio.channels.ClosedChannelException;
 import java.nio.charset.StandardCharsets;
@@ -475,25 +476,6 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
 
     @Override
     public Future push(InputStream src, String dest, int mode, int mtime) throws IOException {
-        ByteBuf buffer = alloc().buffer(8192);
-        try {
-            while (true) {
-                int size = buffer.writeBytes(src, 8192);
-                if (size == -1) {
-                    break;
-                }
-                if (size == 0) {
-                    continue;
-                }
-            }
-        } catch (Throwable cause) {
-            ReferenceCountUtil.safeRelease(buffer);
-            if (cause instanceof IOException) {
-                throw (IOException) cause;
-            } else {
-                throw new IOException(cause.getMessage(), cause);
-            }
-        }
         String destAndMode = dest + "," + mode;
         Promise promise = new DefaultPromise<>(eventLoop().next());
         ChannelFuture cf = open(
@@ -503,6 +485,60 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
                         .addLast(new SyncDecoder())
                         .addLast(new SyncEncoder())
                         .addLast(new ChannelInboundHandlerAdapter(){
+
+                            @Override
+                            public void channelActive(ChannelHandlerContext ctx) throws Exception {
+                                //发送SEND指令
+                                ctx.writeAndFlush(new SyncPath(SyncID.SEND_V1, destAndMode))
+                                        .addListener(f1 -> {
+                                            if (f1.cause() != null) {
+                                                promise.setFailure(f1.cause());
+                                            }
+                                        });
+
+                                //发送数据
+                                //启动一个新的线程读取流并发送数据
+                                new Thread() {
+                                    @Override
+                                    public void run() {
+                                        try {
+                                            while (true) {
+                                                ByteBuf data = alloc().buffer(SYNC_DATA_MAX);
+                                                boolean success = false;
+                                                try {
+                                                    int size = data.writeBytes(src, SYNC_DATA_MAX);
+                                                    if (size == -1) {
+                                                        break;
+                                                    }
+                                                    if (size == 0) {
+                                                        continue;
+                                                    }
+                                                    ctx.writeAndFlush(new SyncData(data))
+                                                            .addListener(f2 -> {
+                                                                if (f2.cause() != null) {
+                                                                    promise.setFailure(f2.cause());
+                                                                }
+                                                            });
+                                                    success = true;
+                                                } finally {
+                                                    if (!success) {
+                                                        ReferenceCountUtil.safeRelease(data);
+                                                    }
+                                                }
+                                            }
+                                            //发送done
+                                            ctx.writeAndFlush(new SyncDataDone(mtime))
+                                                    .addListener(f3 -> {
+                                                        if (f3.cause() != null) {
+                                                            promise.setFailure(f3.cause());
+                                                        }
+                                                    });
+                                        } catch (Throwable cause) {
+                                            promise.setFailure(cause);
+                                        }
+                                    }
+                                }.start();
+                            }
 
                             @Override
                             public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
@@ -518,39 +554,8 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
                         });
         });
         cf.addListener(f0 -> {
-            try {
-                if (f0.cause() != null) {
-                    promise.setFailure(f0.cause());
-                } else {
-                    cf.channel().writeAndFlush(new SyncPath(SyncID.SEND_V1, destAndMode))
-                            .addListener(f1 -> {
-                                if (f1.cause() != null) {
-                                    promise.setFailure(f1.cause());
-                                }
-                            });
-                    while (buffer.isReadable()) {
-                        int size = Math.min(SYNC_DATA_MAX, buffer.readableBytes());
-                        ByteBuf data = buffer.readSlice(size).retain();
-                        cf.channel().writeAndFlush(new SyncData(data))
-                                .addListener(f2 -> {
-                                    if (f2.cause() != null) {
-                                        promise.setFailure(f2.cause());
-                                    }
-                                });
-                    }
-
-                    cf.channel()
-                            .writeAndFlush(new SyncDataDone(mtime))
-                            .addListener(f3 -> {
-                                if (f3.cause() != null) {
-                                    promise.setFailure(f3.cause());
-                                }
-                            });
-
-
-                }
-            } finally {
-                ReferenceCountUtil.safeRelease(buffer);
+            if (f0.cause() != null) {
+                promise.setFailure(f0.cause());
             }
         });
 

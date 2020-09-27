@@ -7,7 +7,6 @@ import adbs.constant.Command;
 import adbs.device.AdbDevice;
 import adbs.entity.AdbPacket;
 import adbs.util.ChannelUtil;
-import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandler;
 import io.netty.channel.ChannelInboundHandlerAdapter;

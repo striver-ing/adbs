@@ -8,7 +8,6 @@ import adbs.codec.*;
 import adbs.connection.AdbAuthHandler;
 import adbs.connection.AdbChannelProcessor;
 import adbs.connection.AdbPacketCodec;
-import adbs.constant.Constants;
 import adbs.constant.DeviceType;
 import adbs.constant.Feature;
 import adbs.constant.SyncID;
@@ -20,8 +19,6 @@ import adbs.util.ChannelUtil;
 import adbs.util.ShellUtil;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
-import io.netty.buffer.ByteBufUtil;
-import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
 import io.netty.handler.codec.LineBasedFrameDecoder;
 import io.netty.handler.codec.string.StringDecoder;
@@ -36,7 +33,9 @@ import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.*;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.ProtocolException;
 import java.nio.channels.ClosedChannelException;
 import java.nio.charset.StandardCharsets;
@@ -44,7 +43,6 @@ import java.security.interfaces.RSAPrivateCrtKey;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -93,8 +91,6 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
     private volatile Set<Feature> features;
 
     private volatile Promise connectPromise;
-
-    private volatile ScheduledFuture connectTimeoutFuture;
 
     private volatile Promise closePromise;
 
@@ -151,6 +147,10 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
         return eventLoop;
     }
 
+    public Future connectFuture() {
+        return connectPromise;
+    }
+
     public Future connect() {
         Promise promise = new DefaultPromise(eventLoop().next());
         if (!CONNECT_PROMISE_UPDATER.compareAndSet(
@@ -204,7 +204,7 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
 
         int connectTimeoutMillis = connection.config().getConnectTimeoutMillis();
         if (connectTimeoutMillis > 0) {
-            connectTimeoutFuture = eventLoop().schedule(() -> {
+            eventLoop().schedule(() -> {
                 ConnectTimeoutException cause =
                         new ConnectTimeoutException("connection timed out: " + serial);
                 promise.tryFailure(cause);

@@ -1,87 +1,30 @@
 package adbs;
 
-import adbs.constant.Constants;
 import adbs.device.AdbDevice;
 import adbs.device.DefaultAdbDevice;
 import adbs.device.SocketAdbDevice;
-import adbs.feature.AdbHttp;
-import adbs.feature.impl.AdbHttpImpl;
-import com.google.common.util.concurrent.SettableFuture;
-import io.netty.bootstrap.Bootstrap;
-import io.netty.channel.*;
-import io.netty.channel.nio.NioEventLoopGroup;
-import io.netty.channel.socket.SocketChannel;
-import io.netty.channel.socket.nio.NioSocketChannel;
-import io.netty.handler.codec.LineBasedFrameDecoder;
-import io.netty.handler.codec.http.*;
-import io.netty.handler.codec.string.StringDecoder;
-import io.netty.util.concurrent.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.channels.ClosedChannelException;
-import java.nio.charset.StandardCharsets;
-import java.util.concurrent.TimeUnit;
+import java.io.FileOutputStream;
 
 public class TestAdbDevice {
 
     private static final Logger logger = LoggerFactory.getLogger(TestAdbDevice.class);
 
     public static void main(String[] args) throws Exception {
-        //InputStream is = new FileInputStream("D:\\tmp\\test.iso");
         DefaultAdbDevice device = SocketAdbDevice.connect("127.0.0.1", 6000);
-        //Long now = System.currentTimeMillis() / 1000;
-        //device.push(is, "/sdcard/xx.exe", AdbDevice.DEFAULT_MODE, now.intValue());
-        ProgressivePromise promise = new DefaultProgressivePromise(device.eventLoop().next());
-        promise.addListener(new GenericProgressiveFutureListener() {
-            @Override
-            public void operationProgressed(ProgressiveFuture future, long progress, long total) throws Exception {
-                System.out.println("progress=" + progress + "/" + total);
-            }
-
-            @Override
-            public void operationComplete(Future future) throws Exception {
-                System.out.println(future);
-            }
-        });
-        TimeUnit.SECONDS.sleep(1);
-        promise.setProgress(1, 2);
-        TimeUnit.SECONDS.sleep(1);
-        promise.setProgress(2, 2);
-//        FullHttpRequest request = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/");
-//        ChannelFuture cf = device.open(
-//                "tcp:127.0.0.1:5555\0", Constants.DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS,
-//                channel -> {
-//                    channel.pipeline()
-//                            .addLast(new HttpClientCodec())
-//                            .addLast(new HttpObjectAggregator(8 * 1024 * 1024))
-//                            .addLast(new ChannelInboundHandlerAdapter(){
-//
-////                                @Override
-////                                public void channelActive(ChannelHandlerContext ctx) throws Exception {
-////                                    ctx.writeAndFlush(request);
-////                                }
-//
-//                                @Override
-//                                public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
-//                                    if (msg instanceof FullHttpResponse) {
-//                                        System.out.println(msg);
-//                                        ctx.close();
-//                                    } else {
-//                                        ctx.fireChannelRead(msg);
-//                                    }
-//                                }
-//
-//                                @Override
-//                                public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-//                                    //future.setException(new ClosedChannelException());
-//                                }
-//                            });
-//                });
-//        cf.channel().writeAndFlush("test");
+        device.connectFuture().get();
+        System.out.println("device connected");
+        Long now = System.currentTimeMillis() / 1000;
+        device.push(new FileInputStream("D:\\tmp\\test.iso"), "/sdcard/xx.exe", AdbDevice.DEFAULT_MODE, now.intValue()).get();
+        System.out.println("push success");
+        File out = new File("D:\\xx.exe");
+        out.delete();
+        out.createNewFile();
+        device.pull("/sdcard/xx.exe", new FileOutputStream(out)).get();
+        System.out.println("pull success");
     }
 }

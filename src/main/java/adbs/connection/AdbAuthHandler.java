@@ -8,7 +8,6 @@ import adbs.entity.AdbPacket;
 import adbs.entity.ConnectResult;
 import adbs.util.AuthUtil;
 import com.google.common.collect.ImmutableSet;
-import com.google.common.util.concurrent.SettableFuture;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
@@ -16,7 +15,6 @@ import io.netty.util.ReferenceCountUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
 import java.net.ProtocolException;
 import java.nio.charset.StandardCharsets;
 import java.security.interfaces.RSAPrivateCrtKey;

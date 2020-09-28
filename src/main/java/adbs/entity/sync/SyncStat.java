@@ -17,4 +17,15 @@ public class SyncStat {
         this.size = size;
         this.mtime = mtime;
     }
+
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder();
+        sb.append(mode);
+        sb.append("  ");
+        sb.append(size);
+        sb.append("  ");
+        sb.append(mtime);
+        return sb.toString();
+    }
 }

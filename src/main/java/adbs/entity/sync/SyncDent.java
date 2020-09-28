@@ -15,6 +15,10 @@ public class SyncDent extends SyncStat {
 
     @Override
     public String toString() {
-        return name;
+        StringBuilder sb = new StringBuilder();
+        sb.append(name);
+        sb.append("  ");
+        sb.append(super.toString());
+        return sb.toString();
     }
 }

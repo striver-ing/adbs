@@ -80,9 +80,14 @@ public class AdbChannelProcessor extends ChannelInboundHandlerAdapter {
                     AdbChannel channel = new AdbChannel(ctx.channel(), 0, remoteId);
                     channel.bind(new AdbChannelAddress(destination, localId)).addListener(f -> {
                         if (f.cause() == null) {
-                            initializer.initChannel(channel);
-                            ctx.pipeline().addLast(channelName, channel);
-                            channel.eventLoop().register(channel);
+                            try {
+                                initializer.initChannel(channel);
+                                ctx.pipeline().addLast(channelName, channel);
+                                ctx.writeAndFlush(new AdbPacket(Command.A_OKAY, localId, remoteId));
+                                channel.eventLoop().register(channel);
+                            } catch (Throwable cause) {
+                                ctx.writeAndFlush(new AdbPacket(Command.A_CLSE, 0, message.arg0));
+                            }
                         } else {
                             ctx.writeAndFlush(new AdbPacket(Command.A_CLSE, 0, message.arg0));
                         }

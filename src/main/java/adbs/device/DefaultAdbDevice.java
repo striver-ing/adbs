@@ -235,14 +235,7 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
                 try {
                     initializer.initChannel(channel);
                     connection.pipeline().addLast(channelName, channel);
-                    channel.connect(new AdbChannelAddress(destination, localId))
-                            .addListener(f1 -> {
-                                if (f1.cause() != null) {
-                                    promise.setFailure(f1.cause());
-                                } else {
-                                    promise.setSuccess();
-                                }
-                            });
+                    channel.connect(new AdbChannelAddress(destination, localId), null, promise);
                 } catch (Throwable cause) {
                     promise.setFailure(cause);
                 }

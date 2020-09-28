@@ -75,7 +75,6 @@ public class AdbChannel extends AbstractChannel implements ChannelInboundHandler
     protected void doBind(SocketAddress localAddress) throws Exception {
         AdbChannelAddress address = (AdbChannelAddress) localAddress;
         this.localAddress = address;
-        parent().writeAndFlush(new AdbPacket(Command.A_OKAY, address.id(), remoteId));
         this.localId = address.id();
     }
 
@@ -93,7 +92,6 @@ public class AdbChannel extends AbstractChannel implements ChannelInboundHandler
     protected void doClose() throws Exception {
         ChannelPromise promise = connectPromise;
         if (promise != null) {
-            // Use tryFailure() instead of setFailure() to avoid the race against cancel().
             promise.tryFailure(new ClosedChannelException());
             connectPromise = null;
         }

@@ -224,6 +224,8 @@ public class AdbChannel extends AbstractChannel implements ChannelInboundHandler
                     if (!isActive()) {
                         ChannelPromise promise = this.connectPromise;
                         if (promise == null) {
+                            //记录日志
+                            logger.warn("connectPromise is null");
                             return;
                         }
                         this.remoteId = packet.arg0;
@@ -308,17 +310,16 @@ public class AdbChannel extends AbstractChannel implements ChannelInboundHandler
                 parent().writeAndFlush(new AdbPacket(Command.A_OPEN, localId, remoteId, buf))
                         .addListener(f -> {
                             if (f.cause() != null) {
-                                connectPromise.setFailure(f.cause());
+                                promise.setFailure(f.cause());
                             }
                         });
 
                 int connectTimeoutMillis = config().getConnectTimeoutMillis();
                 if (connectTimeoutMillis > 0) {
                     connectTimeoutFuture = eventLoop().schedule(() -> {
-                        ChannelPromise connectPromise = AdbChannel.this.connectPromise;
                         ConnectTimeoutException cause =
                                 new ConnectTimeoutException("connection timed out: " + remoteAddress);
-                        if (connectPromise != null && connectPromise.tryFailure(cause)) {
+                        if (promise.tryFailure(cause)) {
                             close(voidPromise());
                         }
                     }, connectTimeoutMillis, TimeUnit.MILLISECONDS);
@@ -338,7 +339,7 @@ public class AdbChannel extends AbstractChannel implements ChannelInboundHandler
                 if (buf != null) {
                     ReferenceCountUtil.safeRelease(buf);
                 }
-                connectPromise.tryFailure(annotateConnectException(t, remoteAddress));
+                promise.tryFailure(annotateConnectException(t, remoteAddress));
                 closeIfClosed();
             }
         }

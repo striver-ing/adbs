@@ -227,12 +227,12 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
         String channelName = ChannelUtil.getChannelName(localId);
         AdbChannel channel = new AdbChannel(connection, localId, 0);
         channel.config().setConnectTimeoutMillis(timeoutMs.intValue());
-        try {
-            ChannelPromise promise = new DefaultChannelPromise(channel);
-            connectPromise.addListener(f0 -> {
-                if (f0.cause() != null) {
-                    promise.setFailure(f0.cause());
-                } else {
+        ChannelPromise promise = new DefaultChannelPromise(channel);
+        connectPromise.addListener(f0 -> {
+            if (f0.cause() != null) {
+                promise.setFailure(f0.cause());
+            } else {
+                try {
                     initializer.initChannel(channel);
                     connection.pipeline().addLast(channelName, channel);
                     channel.connect(new AdbChannelAddress(destination, localId))
@@ -243,14 +243,12 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
                                     promise.setSuccess();
                                 }
                             });
+                } catch (Throwable cause) {
+                    promise.setFailure(cause);
                 }
-            });
-
-            return promise;
-        } catch (Throwable cause) {
-            connection.pipeline().remove(channelName);
-            throw new RuntimeException("open destination `" + destination + "` failed: " + cause.getMessage(), cause);
-        }
+            }
+        });
+        return promise;
     }
 
     private <R> Future<R> exec(String destination, long timeout, TimeUnit unit, Function<String, R> function, ChannelHandler... handlers) {

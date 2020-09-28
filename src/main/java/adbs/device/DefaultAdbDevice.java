@@ -571,15 +571,26 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
     private Future exec(String destination, long timeout, TimeUnit unit, Predicate<String> predicate) {
         Promise promise = new DefaultPromise(eventLoop().next());
         ChannelInboundHandlerAdapter reconnectHandler = new ChannelInboundHandlerAdapter() {
+
+            private void connect() {
+                eventLoop().schedule(() -> {
+                    DefaultAdbDevice.this.connect().addListener(f -> {
+                        if (f.cause() != null) {
+                            logger.error("[{}] reconnect failed, will reconnect in 1 second: {}", serial(), f.cause().getMessage(), f.cause());
+                            connect();
+                        } else {
+                            promise.trySuccess(null);
+                        }
+                    });
+                }, 1, TimeUnit.SECONDS);
+            }
+
             @Override
             public void channelInactive(ChannelHandlerContext ctx) throws Exception {
                 ctx.fireChannelInactive();
-                connect().addListener(f -> {
-                    if (f.cause() != null) {
-                        promise.setFailure(f.cause());
-                    }
-                });
+                close0().addListener(f -> connect());
             }
+
         };
         exec(
                 destination, timeout, unit,

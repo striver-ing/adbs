@@ -48,6 +48,12 @@ public class TCPReverse implements AdbChannelInitializer {
                     }
                 })
                 .connect(host, port)
+                .addListener(f -> {
+                    //TODO 此处需要处理连接不上的情况，直接close会给应用造成困扰，需要改造
+                    if (f.cause() != null) {
+                        channel.close();
+                    }
+                })
                 .channel();
 
         channel.pipeline().addLast(new ChannelInboundHandlerAdapter(){

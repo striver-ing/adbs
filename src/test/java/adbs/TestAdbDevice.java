@@ -11,8 +11,6 @@ public class TestAdbDevice {
 
     public static void main(String[] args) throws Exception {
         DefaultAdbDevice device = SocketAdbDevice.connect("127.0.0.1", 6000);
-        device.root().get();
-        device.unroot().get();
-        device.root().get();
+        device.reverse("tcp:1234", "tcp:1234");
     }
 }

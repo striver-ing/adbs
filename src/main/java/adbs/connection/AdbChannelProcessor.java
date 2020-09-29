@@ -68,9 +68,9 @@ public class AdbChannelProcessor extends ChannelInboundHandlerAdapter {
         switch (message.command) {
 
             case A_OPEN:
+                int remoteId = message.arg0;
+                int localId = channelIdGen.getAndIncrement();
                 try {
-                    int remoteId = message.arg0;
-                    int localId = channelIdGen.getAndIncrement();
                     //-1是因为最后有一个\0
                     byte[] payload = new byte[message.size - 1];
                     message.payload.readBytes(payload);
@@ -86,14 +86,14 @@ public class AdbChannelProcessor extends ChannelInboundHandlerAdapter {
                                 ctx.writeAndFlush(new AdbPacket(Command.A_OKAY, localId, remoteId));
                                 channel.eventLoop().register(channel);
                             } catch (Throwable cause) {
-                                ctx.writeAndFlush(new AdbPacket(Command.A_CLSE, 0, message.arg0));
+                                ctx.writeAndFlush(new AdbPacket(Command.A_CLSE, 0, remoteId));
                             }
                         } else {
-                            ctx.writeAndFlush(new AdbPacket(Command.A_CLSE, 0, message.arg0));
+                            ctx.writeAndFlush(new AdbPacket(Command.A_CLSE, 0, remoteId));
                         }
                     });
                 } catch (Throwable cause) {
-                    ctx.writeAndFlush(new AdbPacket(Command.A_CLSE, 0, message.arg0));
+                    ctx.writeAndFlush(new AdbPacket(Command.A_CLSE, 0, remoteId));
                 } finally {
                     ReferenceCountUtil.safeRelease(message);
                 }

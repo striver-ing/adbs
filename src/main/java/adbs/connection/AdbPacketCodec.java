@@ -21,7 +21,7 @@ public class AdbPacketCodec extends ByteToMessageCodec<AdbPacket> {
     protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception {
         //读取长度
         in.markReaderIndex();
-        if (in.readableBytes() < 12) {
+        if (in.readableBytes() < 16) {
             in.resetReaderIndex();
             return;
         }

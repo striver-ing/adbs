@@ -42,9 +42,9 @@ public class SyncStatDecoder extends SyncDecoder {
         long size = in.readUnsignedIntLE();
         long mtime = in.readUnsignedIntLE();
         return new SyncStat(
-                toMode(mode),
+                mode != 0 ? toMode(mode) : null,
                 size,
-                new Date(mtime * 1000));
+                mtime != 0 ? new Date(mtime * 1000) : null);
     }
 
     protected static SyncStatV2 decodeStatV2(ByteBuf in) {
@@ -62,15 +62,15 @@ public class SyncStatDecoder extends SyncDecoder {
         return new SyncStatV2(
                 error == 0 ? toMode(mode) : null,
                 size,
-                new Date(mtime * 1000),
+                error == 0 ? new Date(mtime * 1000) : null,
                 error,
                 dev,
                 ino,
                 nlink,
                 uid,
                 gid,
-                new Date(atime * 1000),
-                new Date(ctime * 1000));
+                error == 0 ? new Date(atime * 1000) : null,
+                error == 0 ? new Date(ctime * 1000) : null);
     }
 
     private void decodeStat(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception {

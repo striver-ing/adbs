@@ -63,22 +63,19 @@ public interface AdbDevice extends AttributeMap {
 
     default Future pull(String src, File dest) throws IOException {
         FileOutputStream os = new FileOutputStream(dest);
-        try {
-            return pull(src, os);
-        } finally {
+        return pull(src, os).addListener(f -> {
             os.flush();
             os.close();
-        }
+        });
     }
 
     default Future push(File src, String dest) throws IOException {
         FileInputStream is = new FileInputStream(src);
-        try {
-            Long mtime = src.lastModified() / 1000;
-            return push(is, dest, DEFAULT_MODE, mtime.intValue());
-        } finally {
-            is.close();
-        }
+        Long mtime = src.lastModified() / 1000;
+        return push(is, dest, DEFAULT_MODE, mtime.intValue())
+                .addListener(f -> {
+                    is.close();
+                });
     }
 
     /**

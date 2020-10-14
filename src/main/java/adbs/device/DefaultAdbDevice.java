@@ -371,6 +371,9 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
             if (f0.cause() != null) {
                 promise.setFailure(f0.cause());
             } else {
+                promise.addListener(f -> {
+                    cf.channel().writeAndFlush(new SyncQuit());
+                });
                 boolean hasStatV2 = features.contains(Feature.STAT_V2);
                 SyncID sid = hasStatV2 ? SyncID.STAT_V2 : SyncID.LSTAT_V1;
                 SyncPath syncPath = new SyncPath(sid, path);
@@ -418,6 +421,9 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
             if (f0.cause() != null) {
                 promise.setFailure(f0.cause());
             } else {
+                promise.addListener(f -> {
+                    cf.channel().writeAndFlush(new SyncQuit());
+                });
                 boolean hasLsV2 = features.contains(Feature.LS_V2);
                 SyncID sid = hasLsV2 ? SyncID.LIST_V2 : SyncID.LIST_V1;
                 SyncPath syncPath = new SyncPath(sid, path);
@@ -461,7 +467,6 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
                                     }
                                 } else if (msg instanceof SyncDataDone) {
                                     promise.setSuccess(null);
-                                    ctx.writeAndFlush(new SyncQuit());
                                 } else {
                                     promise.setFailure(new ProtocolException("Error reply:" + msg));
                                 }
@@ -477,6 +482,9 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
             if (f0.cause() != null) {
                 promise.setFailure(f0.cause());
             } else {
+                promise.addListener(f -> {
+                    cf.channel().writeAndFlush(new SyncQuit());
+                });
                 cf.channel()
                         .writeAndFlush(new SyncPath(SyncID.RECV_V1, src))
                         .addListener(f -> {
@@ -561,7 +569,6 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
                                     promise.setFailure(new RemoteException(((SyncFail) msg).error));
                                 } else if (msg instanceof SyncOkay) {
                                     promise.setSuccess(null);
-                                    ctx.writeAndFlush(new SyncQuit());
                                 } else {
                                     promise.setFailure(new ProtocolException("Error reply:" + msg));
                                 }
@@ -576,6 +583,10 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
         cf.addListener(f0 -> {
             if (f0.cause() != null) {
                 promise.setFailure(f0.cause());
+            } else {
+                promise.addListener(f -> {
+                    cf.channel().writeAndFlush(new SyncQuit());
+                });
             }
         });
 

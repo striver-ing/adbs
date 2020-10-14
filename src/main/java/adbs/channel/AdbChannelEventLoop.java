@@ -50,16 +50,12 @@ public class AdbChannelEventLoop extends AbstractEventLoop {
 
     @Override
     public Future<?> shutdownGracefully(long quietPeriod, long timeout, TimeUnit unit) {
-        Promise<?> promise = new DefaultPromise<>(this.eventLoop);
-        promise.setSuccess(null);
-        return promise;
+        return eventLoop.newPromise().setSuccess(null);
     }
 
     @Override
     public Future<?> terminationFuture() {
-        Promise<?> promise = new DefaultPromise<>(this.eventLoop);
-        promise.setSuccess(null);
-        return promise;
+        return eventLoop.newPromise().setSuccess(null);
     }
 
     @Override

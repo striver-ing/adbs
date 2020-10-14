@@ -233,14 +233,14 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
         ChannelPromise promise = new DefaultChannelPromise(channel);
         conPromise.addListener(f0 -> {
             if (f0.cause() != null) {
-                promise.setFailure(f0.cause());
+                promise.tryFailure(f0.cause());
             } else {
                 try {
                     initializer.initChannel(channel);
                     connection.pipeline().addLast(channelName, channel);
                     channel.connect(new AdbChannelAddress(destination, localId), null, promise);
                 } catch (Throwable cause) {
-                    promise.setFailure(cause);
+                    promise.tryFailure(cause);
                 }
             }
         });
@@ -267,7 +267,7 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
                         public void channelInactive(ChannelHandlerContext ctx) throws Exception {
                             try {
                                 R result = function.apply(sb.toString());
-                                promise.setSuccess(result);
+                                promise.trySuccess(result);
                             } catch (Throwable cause) {
                                 promise.tryFailure(cause);
                             }
@@ -275,13 +275,13 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
 
                         @Override
                         public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-                            promise.setFailure(cause);
+                            promise.tryFailure(cause);
                         }
                     });
         });
         cf.addListener(f -> {
             if (f.cause() != null) {
-                promise.setFailure(f.cause());
+                promise.tryFailure(f.cause());
             }
         });
         if (timeout > 0) {
@@ -352,23 +352,23 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
                             @Override
                             public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
                                 if (msg instanceof SyncFail) {
-                                    promise.setFailure(new RemoteException(((SyncFail) msg).error));
+                                    promise.tryFailure(new RemoteException(((SyncFail) msg).error));
                                 } else if (msg instanceof SyncStat) {
-                                    promise.setSuccess((SyncStat) msg);
+                                    promise.trySuccess((SyncStat) msg);
                                 } else {
-                                    promise.setFailure(new ProtocolException("Error reply:" + msg));
+                                    promise.tryFailure(new ProtocolException("Error reply:" + msg));
                                 }
                             }
 
                             @Override
                             public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-                                promise.setFailure(cause);
+                                promise.tryFailure(cause);
                             }
                         });
         });
         cf.addListener(f0 -> {
             if (f0.cause() != null) {
-                promise.setFailure(f0.cause());
+                promise.tryFailure(f0.cause());
             } else {
                 promise.addListener(f -> {
                     cf.channel().writeAndFlush(new SyncQuit());
@@ -379,7 +379,7 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
                 cf.channel().writeAndFlush(syncPath)
                         .addListener(f1 -> {
                             if (f1.cause() != null) {
-                                promise.setFailure(f1.cause());
+                                promise.tryFailure(f1.cause());
                             }
                         });
             }
@@ -402,23 +402,23 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
                             @Override
                             public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
                                 if (msg instanceof SyncFail) {
-                                    promise.setFailure(new RemoteException(((SyncFail) msg).error));
+                                    promise.tryFailure(new RemoteException(((SyncFail) msg).error));
                                 } else if (msg instanceof SyncDent[]) {
-                                    promise.setSuccess((SyncDent[]) msg);
+                                    promise.trySuccess((SyncDent[]) msg);
                                 } else {
-                                    promise.setFailure(new ProtocolException("Error reply:" + msg));
+                                    promise.tryFailure(new ProtocolException("Error reply:" + msg));
                                 }
                             }
 
                             @Override
                             public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-                                promise.setFailure(cause);
+                                promise.tryFailure(cause);
                             }
                         });
         });
         cf.addListener(f0 -> {
             if (f0.cause() != null) {
-                promise.setFailure(f0.cause());
+                promise.tryFailure(f0.cause());
             } else {
                 promise.addListener(f -> {
                     cf.channel().writeAndFlush(new SyncQuit());
@@ -429,7 +429,7 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
                 cf.channel().writeAndFlush(syncPath)
                         .addListener(f1 -> {
                             if (f1.cause() != null) {
-                                promise.setFailure(f1.cause());
+                                promise.tryFailure(f1.cause());
                             }
                         });
             }
@@ -451,7 +451,7 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
                             @Override
                             public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
                                 if (msg instanceof SyncFail) {
-                                    promise.setFailure(new RemoteException(((SyncFail) msg).error));
+                                    promise.tryFailure(new RemoteException(((SyncFail) msg).error));
                                 } else if (msg instanceof SyncData) {
                                     ByteBuf buf = ((SyncData) msg).data;
                                     try {
@@ -460,26 +460,26 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
                                             buf.readBytes(dest, size);
                                         }
                                     } catch (Throwable cause) {
-                                        promise.setFailure(cause);
+                                        promise.tryFailure(cause);
                                     } finally {
                                         ReferenceCountUtil.safeRelease(msg);
                                     }
                                 } else if (msg instanceof SyncDataDone) {
-                                    promise.setSuccess(null);
+                                    promise.trySuccess(null);
                                 } else {
-                                    promise.setFailure(new ProtocolException("Error reply:" + msg));
+                                    promise.tryFailure(new ProtocolException("Error reply:" + msg));
                                 }
                             }
 
                             @Override
                             public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-                                promise.setFailure(cause);
+                                promise.tryFailure(cause);
                             }
                         });
         });
         cf.addListener(f0 -> {
             if (f0.cause() != null) {
-                promise.setFailure(f0.cause());
+                promise.tryFailure(f0.cause());
             } else {
                 promise.addListener(f -> {
                     cf.channel().writeAndFlush(new SyncQuit());
@@ -488,7 +488,7 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
                         .writeAndFlush(new SyncPath(SyncID.RECV_V1, src))
                         .addListener(f -> {
                             if (f.cause() != null) {
-                                promise.setFailure(f.cause());
+                                promise.tryFailure(f.cause());
                             }
                         });
             }
@@ -514,7 +514,7 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
                                 ctx.writeAndFlush(new SyncPath(SyncID.SEND_V1, destAndMode))
                                         .addListener(f1 -> {
                                             if (f1.cause() != null) {
-                                                promise.setFailure(f1.cause());
+                                                promise.tryFailure(f1.cause());
                                             }
                                         });
 
@@ -538,7 +538,7 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
                                                     ctx.writeAndFlush(new SyncData(data))
                                                             .addListener(f2 -> {
                                                                 if (f2.cause() != null) {
-                                                                    promise.setFailure(f2.cause());
+                                                                    promise.tryFailure(f2.cause());
                                                                 }
                                                             });
                                                     success = true;
@@ -552,11 +552,11 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
                                             ctx.writeAndFlush(new SyncDataDone(mtime))
                                                     .addListener(f3 -> {
                                                         if (f3.cause() != null) {
-                                                            promise.setFailure(f3.cause());
+                                                            promise.tryFailure(f3.cause());
                                                         }
                                                     });
                                         } catch (Throwable cause) {
-                                            promise.setFailure(cause);
+                                            promise.tryFailure(cause);
                                         }
                                     }
                                 }.start();
@@ -565,23 +565,23 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
                             @Override
                             public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
                                 if (msg instanceof SyncFail) {
-                                    promise.setFailure(new RemoteException(((SyncFail) msg).error));
+                                    promise.tryFailure(new RemoteException(((SyncFail) msg).error));
                                 } else if (msg instanceof SyncOkay) {
-                                    promise.setSuccess(null);
+                                    promise.trySuccess(null);
                                 } else {
-                                    promise.setFailure(new ProtocolException("Error reply:" + msg));
+                                    promise.tryFailure(new ProtocolException("Error reply:" + msg));
                                 }
                             }
 
                             @Override
                             public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-                                promise.setFailure(cause);
+                                promise.tryFailure(cause);
                             }
                         });
         });
         cf.addListener(f0 -> {
             if (f0.cause() != null) {
-                promise.setFailure(f0.cause());
+                promise.tryFailure(f0.cause());
             } else {
                 promise.addListener(f -> {
                     cf.channel().writeAndFlush(new SyncQuit());
@@ -607,7 +607,7 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
                 result -> {
                     result = StringUtils.trim(result);
                     if (predicate.test(result)) {
-                        promise.setSuccess(null);
+                        promise.trySuccess(null);
                     }
                     return null;
                 },

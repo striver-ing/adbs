@@ -308,7 +308,7 @@ public class AdbChannel extends AbstractChannel implements ChannelInboundHandler
                 parent().writeAndFlush(new AdbPacket(Command.A_OPEN, localId, remoteId, buf))
                         .addListener(f -> {
                             if (f.cause() != null) {
-                                promise.setFailure(f.cause());
+                                promise.tryFailure(f.cause());
                             }
                         });
 

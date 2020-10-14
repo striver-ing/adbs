@@ -59,7 +59,7 @@ public interface AdbDevice extends AttributeMap {
 
     Future pull(String src, OutputStream dest);
 
-    Future push(InputStream src, String dest, int mode, int mtime) throws IOException;
+    Future push(InputStream src, String dest, int mode, int mtime);
 
     default Future pull(String src, File dest) throws IOException {
         FileOutputStream os = new FileOutputStream(dest);

@@ -222,13 +222,17 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
 
     @Override
     public ChannelFuture open(String destination, long timeout, TimeUnit unit, AdbChannelInitializer initializer) {
+        Promise conPromise = connectPromise;
+        if (conPromise == null) {
+            throw new RuntimeException("Not Connect");
+        }
         Long timeoutMs = unit.toMillis(timeout);
         int localId = channelIdGen.getAndIncrement();
         String channelName = ChannelUtil.getChannelName(localId);
         AdbChannel channel = new AdbChannel(connection, localId, 0);
         channel.config().setConnectTimeoutMillis(timeoutMs.intValue());
         ChannelPromise promise = new DefaultChannelPromise(channel);
-        connectPromise.addListener(f0 -> {
+        conPromise.addListener(f0 -> {
             if (f0.cause() != null) {
                 promise.setFailure(f0.cause());
             } else {
@@ -268,6 +272,11 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
                             } catch (Throwable cause) {
                                 promise.tryFailure(cause);
                             }
+                        }
+
+                        @Override
+                        public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+                            promise.setFailure(cause);
                         }
                     });
         });
@@ -351,6 +360,11 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
                                     promise.setFailure(new ProtocolException("Error reply:" + msg));
                                 }
                             }
+
+                            @Override
+                            public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+                                promise.setFailure(cause);
+                            }
                         });
         });
         cf.addListener(f0 -> {
@@ -392,6 +406,11 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
                                 } else {
                                     promise.setFailure(new ProtocolException("Error reply:" + msg));
                                 }
+                            }
+
+                            @Override
+                            public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+                                promise.setFailure(cause);
                             }
                         });
         });
@@ -446,6 +465,11 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
                                 } else {
                                     promise.setFailure(new ProtocolException("Error reply:" + msg));
                                 }
+                            }
+
+                            @Override
+                            public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+                                promise.setFailure(cause);
                             }
                         });
         });
@@ -541,6 +565,11 @@ public class DefaultAdbDevice extends DefaultAttributeMap implements AdbDevice {
                                 } else {
                                     promise.setFailure(new ProtocolException("Error reply:" + msg));
                                 }
+                            }
+
+                            @Override
+                            public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+                                promise.setFailure(cause);
                             }
                         });
         });

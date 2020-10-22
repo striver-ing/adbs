@@ -23,7 +23,10 @@ public class SmartSocketAdbDevice implements AdbDevice {
 
     private volatile AdbDevice device;
 
+    private volatile boolean isClosed;
+
     public SmartSocketAdbDevice(String host, Integer port, RSAPrivateCrtKey privateKey, byte[] publicKey) {
+        this.isClosed = false;
         this.device = new ActualSocketDevice(host, port, privateKey, publicKey);
     }
 
@@ -33,13 +36,18 @@ public class SmartSocketAdbDevice implements AdbDevice {
     }
 
     @Override
-    public DeviceType type() {
-        return device.type();
+    public boolean isClosed() {
+        return isClosed;
     }
 
     @Override
     public String serial() {
         return device.serial();
+    }
+
+    @Override
+    public DeviceType type() {
+        return device.type();
     }
 
     @Override
@@ -154,6 +162,7 @@ public class SmartSocketAdbDevice implements AdbDevice {
 
     @Override
     public Future close() {
+        this.isClosed = true;
         return device.close();
     }
 
@@ -192,14 +201,16 @@ public class SmartSocketAdbDevice implements AdbDevice {
                                 @Override
                                 public void channelInactive(ChannelHandlerContext ctx) throws Exception {
                                     ctx.fireChannelInactive();
-                                    device = new ActualSocketDevice(host(), port(), privateKey(), publicKey());
+                                    if (!isClosed()) {
+                                        device = new ActualSocketDevice(host(), port(), privateKey(), publicKey());
+                                    }
                                 }
                             });
                         }
                     })
                     .connect(host(), port())
                     .addListener(f -> {
-                        if (f.cause() != null) {
+                        if (f.cause() != null && !isClosed()) {
                             device = new ActualSocketDevice(host(), port(), privateKey(), publicKey());
                         }
                     });

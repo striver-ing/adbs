@@ -19,17 +19,19 @@ public interface AdbDevice extends AttributeMap {
 
     int DEFAULT_MODE = 0664;
 
-    /**
-     * type                print bootloader | device
-     * @return
-     */
-    DeviceType type();
+    boolean isClosed();
 
     /**
      * serial             print <serial-number>
      * @return
      */
     String serial();
+
+    /**
+     * type                print bootloader | device
+     * @return
+     */
+    DeviceType type();
 
     String model();
 

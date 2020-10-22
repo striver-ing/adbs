@@ -88,6 +88,11 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
     }
 
     @Override
+    public boolean isClosed() {
+        return closePromise != null && (closePromise.isDone() || closePromise.isCancelled());
+    }
+
+    @Override
     public String serial() {
         return serial;
     }
@@ -211,12 +216,11 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
 
     @Override
     public Future<Channel> open(String destination, long timeout, TimeUnit unit, AdbChannelInitializer initializer) {
-        Promise<Channel> promise = new DefaultPromise<>(executor());
-        if (closePromise.isDone() || closePromise.isCancelled()) {
-            //如果连接被关闭的情况下，直接抛出异常
-            promise.setFailure(new ClosedChannelException());
-            return promise;
+        //如果连接被关闭的情况下，直接抛出异常
+        if (isClosed()) {
+            throw new RuntimeException("Connection Closed");
         }
+        Promise<Channel> promise = new DefaultPromise<>(executor());
         Long timeoutMs = unit.toMillis(timeout);
         int localId = channelIdGen.getAndIncrement();
         String channelName = ChannelUtil.getChannelName(localId);

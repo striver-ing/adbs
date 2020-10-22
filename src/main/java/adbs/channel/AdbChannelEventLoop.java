@@ -1,9 +1,7 @@
 package adbs.channel;
 
 import io.netty.channel.*;
-import io.netty.util.concurrent.DefaultPromise;
 import io.netty.util.concurrent.Future;
-import io.netty.util.concurrent.Promise;
 import io.netty.util.concurrent.ScheduledFuture;
 
 import java.util.concurrent.Callable;

@@ -1,18 +1,18 @@
 package adbs.feature.impl;
 
-import adbs.constant.Constants;
 import adbs.device.AdbDevice;
 import adbs.feature.AdbHttp;
-import com.google.common.util.concurrent.SettableFuture;
-import io.netty.channel.ChannelFuture;
+import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.HttpClientCodec;
 import io.netty.handler.codec.http.HttpObjectAggregator;
 import io.netty.handler.codec.http.HttpRequest;
+import io.netty.util.concurrent.DefaultPromise;
+import io.netty.util.concurrent.Future;
+import io.netty.util.concurrent.Promise;
 
-import java.io.IOException;
 import java.nio.channels.ClosedChannelException;
 import java.util.concurrent.TimeUnit;
 
@@ -28,10 +28,10 @@ public class AdbHttpImpl implements AdbHttp {
     }
 
     @Override
-    public FullHttpResponse execute(HttpRequest request, long timeout, TimeUnit unit) throws IOException {
-        SettableFuture<FullHttpResponse> future = SettableFuture.create();
-        ChannelFuture cf = device.open(
-                "tcp:" + port + "\0", Constants.DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS,
+    public FullHttpResponse execute(HttpRequest request, long timeout, TimeUnit unit) throws Exception {
+        Promise<FullHttpResponse> promise = new DefaultPromise<>(device.executor());
+        Future<Channel> future = device.open(
+                "tcp:" + port + "\0", timeout, unit,
                 channel -> {
                     channel.pipeline()
                             .addLast(new HttpClientCodec())
@@ -42,7 +42,7 @@ public class AdbHttpImpl implements AdbHttp {
                                 public void channelActive(ChannelHandlerContext ctx) throws Exception {
                                     ctx.writeAndFlush(request).addListener(f -> {
                                         if (f.cause() != null) {
-                                            future.setException(f.cause());
+                                            promise.tryFailure(f.cause());
                                         }
                                     });
                                 }
@@ -50,7 +50,7 @@ public class AdbHttpImpl implements AdbHttp {
                                 @Override
                                 public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
                                     if (msg instanceof FullHttpResponse) {
-                                        future.set((FullHttpResponse) msg);
+                                        promise.trySuccess((FullHttpResponse) msg);
                                     } else {
                                         ctx.fireChannelRead(msg);
                                     }
@@ -58,21 +58,15 @@ public class AdbHttpImpl implements AdbHttp {
 
                                 @Override
                                 public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-                                    future.setException(new ClosedChannelException());
+                                    promise.tryFailure(new ClosedChannelException());
                                 }
                             });
         });
-        cf.addListener(f -> {
-            if (f.cause() != null) {
-                future.setException(f.cause());
-            }
-        });
+        Channel channel = future.get(timeout, unit);
         try {
-            return future.get(timeout, unit);
-        } catch (Throwable cause) {
-            throw new IOException(cause.getMessage(), cause);
+            return promise.get(timeout, unit);
         } finally {
-            cf.channel().close();
+            channel.close();
         }
     }
 }

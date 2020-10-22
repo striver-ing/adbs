@@ -1,65 +1,118 @@
 package adbs.device;
 
 import adbs.channel.AdbChannelInitializer;
-import adbs.util.AuthUtil;
-import adbs.util.ChannelFactory;
 import io.netty.bootstrap.Bootstrap;
-import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelInitializer;
-import io.netty.channel.ChannelOption;
-import io.netty.channel.EventLoopGroup;
+import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import io.netty.util.concurrent.DefaultPromise;
+import io.netty.util.concurrent.Future;
+import io.netty.util.concurrent.GlobalEventExecutor;
+import io.netty.util.concurrent.Promise;
+import org.apache.commons.lang3.StringUtils;
 
-import java.nio.charset.StandardCharsets;
 import java.security.interfaces.RSAPrivateCrtKey;
+import java.util.concurrent.TimeUnit;
 
-public class SocketAdbDevice {
+import static adbs.constant.Constants.DEFAULT_READ_TIMEOUT;
 
-    private static final Logger logger = LoggerFactory.getLogger(SocketAdbDevice.class);
+public class SocketAdbDevice extends AbstractAdbDevice {
 
-    private static final RSAPrivateCrtKey privateKey;
-    private static final byte[] publicKey;
+    private final String host;
 
-    static {
-        try {
-            privateKey = AuthUtil.loadPrivateKey("adbkey");
-            publicKey = AuthUtil.generatePublicKey(privateKey).getBytes(StandardCharsets.UTF_8);
-        } catch (Throwable cause) {
-            throw new RuntimeException("load private key failed:" + cause.getMessage(), cause);
-        }
-    }
+    private final Integer port;
 
-    public static DefaultAdbDevice connect(String host, Integer port) {
-        String serial = host + ":" + port;
-        NioEventLoopGroup executors = new NioEventLoopGroup(1, r -> {
-            return new Thread(r, "Connection-" + serial);
+    private final EventLoopGroup executors;
+
+    public SocketAdbDevice(String host, Integer port, RSAPrivateCrtKey privateKey, byte[] publicKey) {
+        super(host + ":" + port, privateKey, publicKey);
+        this.host = host;
+        this.port = port;
+        this.executors = new NioEventLoopGroup(1, r -> {
+            return new Thread(r, "Connection-" + host + ":" + port);
         });
-        ChannelFactory factory = new ChannelFactory() {
-            @Override
-            public ChannelFuture newChannel(DefaultAdbDevice device, EventLoopGroup eventLoop, AdbChannelInitializer initializer) {
-                Bootstrap bootstrap = new Bootstrap();
-                return bootstrap.group(eventLoop)
-                        .channel(NioSocketChannel.class)
-                        .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 30000)
-                        .option(ChannelOption.SO_KEEPALIVE, true)
-                        .option(ChannelOption.TCP_NODELAY, true)
-                        .option(ChannelOption.SO_LINGER, 3)
-                        .option(ChannelOption.SO_REUSEADDR, true)
-                        .option(ChannelOption.AUTO_CLOSE, true)
-                        .handler(new ChannelInitializer<SocketChannel>() {
-                            @Override
-                            protected void initChannel(SocketChannel ch) throws Exception {
-                                initializer.initChannel(ch);
-                            }
-                        })
-                        .connect(host, port);
-            }
-        };
-        return new DefaultAdbDevice(serial, privateKey, publicKey, factory, executors);
+        this.connect();
     }
 
+    public String host() {
+        return host;
+    }
+
+    public Integer port() {
+        return port;
+    }
+
+    @Override
+    public EventLoop executor() {
+        return executors.next();
+    }
+
+    protected EventLoopGroup executors() {
+        return executors;
+    }
+
+    @Override
+    protected ChannelFuture newChannel(AdbChannelInitializer initializer) {
+        Bootstrap bootstrap = new Bootstrap();
+        return bootstrap.group(executors)
+                .channel(NioSocketChannel.class)
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 30000)
+                .option(ChannelOption.SO_KEEPALIVE, true)
+                .option(ChannelOption.TCP_NODELAY, true)
+                .option(ChannelOption.SO_LINGER, 3)
+                .option(ChannelOption.SO_REUSEADDR, true)
+                .option(ChannelOption.AUTO_CLOSE, true)
+                .handler(new ChannelInitializer<SocketChannel>() {
+                    @Override
+                    protected void initChannel(SocketChannel ch) throws Exception {
+                        initializer.initChannel(ch);
+                    }
+                })
+                .connect(host, port);
+    }
+
+    @Override
+    public Future reload(int port) {
+        Promise promise = new DefaultPromise<>(executor());
+        exec("tcpip:"+port+"\0", DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS)
+                .addListener((Future<String> f) -> {
+                    if (f.cause() != null) {
+                        promise.tryFailure(f.cause());
+                    } else {
+                        String s = StringUtils.trim(f.getNow());
+                        if (s.startsWith("restarting in TCP mode")) {
+                            promise.trySuccess(null);
+                        } else {
+                            //此时需要等待adbd重启
+                            closeFuture().addListener(f1 -> {
+                                if (f1.cause() != null) {
+                                    promise.tryFailure(f1.cause());
+                                } else {
+                                    promise.trySuccess(null);
+                                }
+                            });
+                        }
+                    }
+                });
+        return promise;
+    }
+
+    @Override
+    public Future close() {
+        Promise promise = new DefaultPromise(GlobalEventExecutor.INSTANCE);
+        super.close().addListener(f0 -> {
+            executors.shutdownGracefully().addListener(f1 -> {
+                if (f0.cause() == null && f1.cause() == null) {
+                    promise.trySuccess(null);
+                } else if (f0.cause() != null) {
+                    promise.tryFailure(f0.cause());
+                } else {
+                    promise.tryFailure(f1.cause());
+                }
+            });
+        });
+        return promise;
+    }
+    
 }

@@ -5,15 +5,15 @@ import adbs.constant.DeviceType;
 import adbs.constant.Feature;
 import adbs.entity.sync.SyncDent;
 import adbs.entity.sync.SyncStat;
-import io.netty.channel.ChannelFuture;
+import io.netty.channel.Channel;
 import io.netty.channel.ChannelInboundHandler;
+import io.netty.channel.EventLoop;
 import io.netty.util.AttributeMap;
 import io.netty.util.concurrent.Future;
 
 import java.io.*;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Function;
 
 public interface AdbDevice extends AttributeMap {
 
@@ -39,19 +39,17 @@ public interface AdbDevice extends AttributeMap {
 
     Set<Feature> features();
 
-    ChannelFuture open(String destination, long timeout, TimeUnit unit, AdbChannelInitializer initializer);
+    EventLoop executor();
 
-    <R> Future<R> exec(String destination, long timeout, TimeUnit unit, Function<String, R> function);
+    Future<Channel> open(String destination, long timeout, TimeUnit unit, AdbChannelInitializer initializer);
 
-    default Future<String> exec(String destination, long timeout, TimeUnit unit) {
-        return exec(destination, timeout, unit, result -> result);
-    }
+    Future<String> exec(String destination, long timeout, TimeUnit unit);
 
     Future<String> shell(String cmd, String... args);
 
-    ChannelFuture shell(boolean lineFramed, ChannelInboundHandler handler);
+    Future<Channel> shell(boolean lineFramed, ChannelInboundHandler handler);
 
-    ChannelFuture shell(String cmd, String[] args, boolean lineFramed, ChannelInboundHandler handler);
+    Future<Channel> shell(String cmd, String[] args, boolean lineFramed, ChannelInboundHandler handler);
 
     Future<SyncStat> stat(String path);
 
@@ -89,11 +87,17 @@ public interface AdbDevice extends AttributeMap {
     Future unroot();
 
     /**
-     * remount [-R]
-     *      remount partitions read-write. if a reboot is required, -R will
-     *      will automatically reboot the device.
+     * remount partitions read-write.
      */
     Future remount();
+
+    /**
+     * usb                      restart adbd listening on USB
+     * tcpip PORT               restart adbd listening on TCP on PORT
+     * @param port
+     * @return
+     */
+    Future reload(int port);
 
     Future reverse(String destination, AdbChannelInitializer initializer);
 

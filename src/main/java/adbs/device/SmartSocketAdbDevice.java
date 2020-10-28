@@ -9,8 +9,7 @@ import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.*;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
-import io.netty.util.Attribute;
-import io.netty.util.AttributeKey;
+import io.netty.util.DefaultAttributeMap;
 import io.netty.util.concurrent.Future;
 
 import java.io.InputStream;
@@ -19,7 +18,7 @@ import java.security.interfaces.RSAPrivateCrtKey;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
-public class SmartSocketAdbDevice implements AdbDevice {
+public class SmartSocketAdbDevice extends DefaultAttributeMap implements AdbDevice {
 
     private volatile AdbDevice device;
 
@@ -164,16 +163,6 @@ public class SmartSocketAdbDevice implements AdbDevice {
     public Future close() {
         this.isClosed = true;
         return device.close();
-    }
-
-    @Override
-    public <T> Attribute<T> attr(AttributeKey<T> key) {
-        return device.attr(key);
-    }
-
-    @Override
-    public <T> boolean hasAttr(AttributeKey<T> key) {
-        return device.hasAttr(key);
     }
 
     private class ActualSocketDevice extends SocketAdbDevice {

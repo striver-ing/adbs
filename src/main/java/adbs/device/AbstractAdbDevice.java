@@ -826,6 +826,6 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
 
     @Override
     public String toString() {
-        return type.getCode() + " " + serial;
+        return serial;
     }
 }

@@ -190,7 +190,7 @@ public class SmartSocketAdbDevice extends DefaultAttributeMap implements AdbDevi
                                 @Override
                                 public void channelInactive(ChannelHandlerContext ctx) throws Exception {
                                     ctx.fireChannelInactive();
-                                    if (!isClosed()) {
+                                    if (!SmartSocketAdbDevice.this.isClosed()) {
                                         device = new ActualSocketDevice(host(), port(), privateKey(), publicKey());
                                     }
                                 }
@@ -199,7 +199,7 @@ public class SmartSocketAdbDevice extends DefaultAttributeMap implements AdbDevi
                     })
                     .connect(host(), port())
                     .addListener(f -> {
-                        if (f.cause() != null && !isClosed()) {
+                        if (f.cause() != null && !SmartSocketAdbDevice.this.isClosed()) {
                             device = new ActualSocketDevice(host(), port(), privateKey(), publicKey());
                         }
                     });

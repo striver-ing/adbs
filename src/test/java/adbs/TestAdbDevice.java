@@ -32,17 +32,8 @@ public class TestAdbDevice {
     }
 
     public static void main(String[] args) throws Exception {
-        AdbDevice device = new SmartSocketAdbDevice("192.168.137.232", 5555, privateKey, publicKey);
-        for(int i=0; i<10; i++) {
-            try {
-                device.shell("ls", "-l", "/sdcard").get();
-                System.out.println("success");
-            } catch (Exception e) {
-                System.out.println("failed:" + e.getMessage());
-            } finally {
-                TimeUnit.SECONDS.sleep(5);
-            }
-        }
-        device.close();
+        AdbDevice device = new SmartSocketAdbDevice("127.0.0.1", 6056, privateKey, publicKey);
+        System.out.println(device.shell("ls", "-l", "/").get());
+        device.close().get();
     }
 }

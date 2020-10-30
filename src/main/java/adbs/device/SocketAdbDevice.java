@@ -72,6 +72,8 @@ public class SocketAdbDevice extends AbstractAdbDevice {
                 .connect(host, port);
     }
 
+
+    @SuppressWarnings("Duplicates")
     @Override
     public Future reload(int port) {
         Promise promise = new DefaultPromise<>(executor());
@@ -98,6 +100,7 @@ public class SocketAdbDevice extends AbstractAdbDevice {
         return promise;
     }
 
+    @SuppressWarnings("Duplicates")
     @Override
     public Future close() {
         Promise promise = new DefaultPromise(GlobalEventExecutor.INSTANCE);

@@ -43,9 +43,9 @@ public interface AdbDevice extends AttributeMap {
 
     EventLoop executor();
 
-    Future<Channel> open(String destination, long timeout, TimeUnit unit, AdbChannelInitializer initializer);
+    Future<Channel> open(String destination, AdbChannelInitializer initializer);
 
-    Future<String> exec(String destination, long timeout, TimeUnit unit);
+    Future<String> exec(String destination);
 
     Future<String> shell(String cmd, String... args);
 

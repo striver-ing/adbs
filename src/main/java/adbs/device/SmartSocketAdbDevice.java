@@ -21,9 +21,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.security.interfaces.RSAPrivateCrtKey;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
-
-import static adbs.constant.Constants.DEFAULT_READ_TIMEOUT;
 
 public class SmartSocketAdbDevice extends DefaultAttributeMap implements AdbDevice {
 
@@ -37,6 +34,8 @@ public class SmartSocketAdbDevice extends DefaultAttributeMap implements AdbDevi
 
     private volatile boolean isClosed;
 
+    private volatile int readTimeout;
+
     public SmartSocketAdbDevice(String host, Integer port, RSAPrivateCrtKey privateKey, byte[] publicKey) {
         this.host = host;
         this.port = port;
@@ -45,6 +44,11 @@ public class SmartSocketAdbDevice extends DefaultAttributeMap implements AdbDevi
         });
         this.isClosed = false;
         this.device = new ActualSocketDevice(host, port, privateKey, publicKey);
+        this.readTimeout = 0;
+    }
+
+    public void readTimeout(int readTimeout) {
+        this.readTimeout = readTimeout;
     }
 
     @Override
@@ -88,13 +92,13 @@ public class SmartSocketAdbDevice extends DefaultAttributeMap implements AdbDevi
     }
 
     @Override
-    public Future<Channel> open(String destination, long timeout, TimeUnit unit, AdbChannelInitializer initializer) {
-        return device.open(destination, timeout, unit, initializer);
+    public Future<Channel> open(String destination, AdbChannelInitializer initializer) {
+        return device.open(destination, initializer);
     }
 
     @Override
-    public Future<String> exec(String destination, long timeout, TimeUnit unit) {
-        return device.exec(destination, timeout, unit);
+    public Future<String> exec(String destination) {
+        return device.exec(destination);
     }
 
     @Override
@@ -204,6 +208,11 @@ public class SmartSocketAdbDevice extends DefaultAttributeMap implements AdbDevi
         }
 
         @Override
+        protected int readTimeout() {
+            return SmartSocketAdbDevice.this.readTimeout;
+        }
+
+        @Override
         public EventLoop executor() {
             return SmartSocketAdbDevice.this.executor();
         }
@@ -246,8 +255,7 @@ public class SmartSocketAdbDevice extends DefaultAttributeMap implements AdbDevi
         @Override
         public Future reload(int port) {
             Promise promise = new DefaultPromise<>(executor());
-            exec("tcpip:"+port+"\0", DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS)
-                    .addListener((Future<String> f) -> {
+            exec("tcpip:"+port+"\0").addListener((Future<String> f) -> {
                         if (f.cause() != null) {
                             promise.tryFailure(f.cause());
                         } else {

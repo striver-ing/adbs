@@ -45,7 +45,6 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 
-import static adbs.constant.Constants.DEFAULT_READ_TIMEOUT;
 import static adbs.constant.Constants.SYNC_DATA_MAX;
 
 public abstract class AbstractAdbDevice extends DefaultAttributeMap implements AdbDevice {
@@ -134,6 +133,8 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
         return closePromise;
     }
 
+    abstract protected int readTimeout();
+
     protected abstract ChannelFuture newChannel(AdbChannelInitializer initializer);
 
     protected void connect() {
@@ -215,13 +216,13 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
     }
 
     @Override
-    public Future<Channel> open(String destination, long timeout, TimeUnit unit, AdbChannelInitializer initializer) {
+    public Future<Channel> open(String destination, AdbChannelInitializer initializer) {
         //如果连接被关闭的情况下，直接抛出异常
         if (isClosed()) {
             throw new RuntimeException("Connection Closed");
         }
         Promise<Channel> promise = new DefaultPromise<>(executor());
-        Long timeoutMs = unit.toMillis(timeout);
+        Long timeoutMs = TimeUnit.SECONDS.toMillis(readTimeout());
         int localId = channelIdGen.getAndIncrement();
         String channelName = ChannelUtil.getChannelName(localId);
         connectPromise.addListener((Future<Channel> f0) -> {
@@ -251,10 +252,10 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
     }
 
     @Override
-    public Future<String> exec(String destination, long timeout, TimeUnit unit) {
+    public Future<String> exec(String destination) {
         Promise<String> promise = new DefaultPromise<>(executor());
         StringBuilder sb = new StringBuilder();
-        Future<Channel> future = open(destination, timeout, unit, channel -> {
+        Future<Channel> future = open(destination, channel -> {
             channel.pipeline()
                     .addLast(new StringDecoder(StandardCharsets.UTF_8))
                     .addLast(new StringEncoder(StandardCharsets.UTF_8))
@@ -293,11 +294,12 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
                 });
             }
         });
-        if (timeout > 0) {
+        int readTimeout = readTimeout();
+        if (readTimeout > 0) {
             executor().schedule(() -> {
                 TimeoutException cause = new TimeoutException("exec timed out: " + destination.trim());
                 promise.tryFailure(cause);
-            }, timeout, unit);
+            }, readTimeout, TimeUnit.SECONDS);
         }
 
         return promise;
@@ -306,12 +308,12 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
     @Override
     public Future<String> shell(String cmd, String... args) {
         String shellCmd = ShellUtil.buildShellCmd(cmd, args);
-        return exec(shellCmd, DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS);
+        return exec(shellCmd);
     }
 
     @Override
     public Future<Channel> shell(boolean lineFramed, ChannelInboundHandler handler) {
-        return open("shell:\0", DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS, channel -> {
+        return open("shell:\0", channel -> {
             if (lineFramed) {
                 channel.pipeline().addLast(new LineBasedFrameDecoder(8192));
             }
@@ -325,7 +327,7 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
     @Override
     public Future<Channel> shell(String cmd, String[] args, boolean lineFramed, ChannelInboundHandler handler) {
         String shellCmd = ShellUtil.buildShellCmd(cmd, args);
-        return open(shellCmd, DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS, channel -> {
+        return open(shellCmd, channel -> {
             if (lineFramed) {
                 channel.pipeline().addLast(new LineBasedFrameDecoder(8192));
             }
@@ -340,7 +342,7 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
     public Future<SyncStat> stat(String path) {
         Promise<SyncStat> promise = new DefaultPromise<>(executor());
         Future<Channel> future = open(
-                "sync:\0", DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS,
+                "sync:\0",
                 channel -> {
                     channel.pipeline()
                             .addLast(new SyncStatDecoder())
@@ -390,7 +392,7 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
     public Future<SyncDent[]> list(String path) {
         Promise<SyncDent[]> promise = new DefaultPromise<>(executor());
         Future<Channel> future = open(
-                "sync:\0", DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS,
+                "sync:\0",
                 channel -> {
                     channel.pipeline()
                             .addLast(new SyncDentDecoder())
@@ -441,7 +443,7 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
     public Future pull(String src, OutputStream dest) {
         Promise promise = new DefaultPromise<>(executor());
         Future<Channel> future = open(
-                "sync:\0", DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS,
+                "sync:\0",
                 channel -> {
                     channel.pipeline()
                             .addLast(new SyncDataDecoder())
@@ -501,7 +503,7 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
         String destAndMode = dest + "," + mode;
         Promise promise = new DefaultPromise<>(executor());
         Future<Channel> future = open(
-                "sync:\0", DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS,
+                "sync:\0",
                 channel -> {
                     channel.pipeline()
                             .addLast(new SyncDecoder())
@@ -597,8 +599,7 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
     @Override
     public Future root() {
         Promise promise = new DefaultPromise<>(executor());
-        exec("root:\0", DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS)
-                .addListener((Future<String> f) -> {
+        exec("root:\0").addListener((Future<String> f) -> {
                     if (f.cause() != null) {
                         promise.tryFailure(f.cause());
                     } else {
@@ -623,8 +624,7 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
     @Override
     public Future unroot() {
         Promise promise = new DefaultPromise<>(executor());
-        exec("unroot:\0", DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS)
-                .addListener((Future<String> f) -> {
+        exec("unroot:\0").addListener((Future<String> f) -> {
                     if (f.cause() != null) {
                         promise.tryFailure(f.cause());
                     } else {
@@ -649,8 +649,7 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
     @Override
     public Future remount() {
         Promise promise = new DefaultPromise<>(executor());
-        exec("unroot:\0", DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS)
-                .addListener((Future<String> f) -> {
+        exec("unroot:\0").addListener((Future<String> f) -> {
                     if (f.cause() != null) {
                         promise.tryFailure(f.cause());
                     } else {
@@ -678,8 +677,7 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
     public Future reverse(String destination, AdbChannelInitializer initializer) {
         String cmd = "reverse:forward:" + destination + ";" + destination + "\0";
         Promise promise = new DefaultPromise<>(executor());
-        exec(cmd, DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS)
-                .addListener((Future<String> f) -> {
+        exec(cmd).addListener((Future<String> f) -> {
                     if (f.cause() != null) {
                         promise.tryFailure(f.cause());
                     } else {
@@ -718,8 +716,7 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
         }
         String cmd = "reverse:forward:" + remote + ";" + local + "\0";
         Promise promise = new DefaultPromise<>(executor());
-        exec(cmd, DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS)
-                .addListener((Future<String> f) -> {
+        exec(cmd).addListener((Future<String> f) -> {
                     if (f.cause() != null) {
                         promise.tryFailure(f.cause());
                     } else {
@@ -739,8 +736,7 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
     @Override
     public Future<String[]> reverseList() {
         Promise<String[]> promise = new DefaultPromise<>(executor());
-        exec("reverse:list-forward\0", DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS)
-                .addListener((Future<String> f) -> {
+        exec("reverse:list-forward\0").addListener((Future<String> f) -> {
                     if (f.cause() != null) {
                         promise.tryFailure(f.cause());
                     } else {
@@ -765,8 +761,7 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
     @Override
     public Future reverseRemove(String destination) {
         Promise promise = new DefaultPromise<>(executor());
-        exec("reverse:killforward:" + destination + "\0", DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS)
-                .addListener((Future<String> f) -> {
+        exec("reverse:killforward:" + destination + "\0").addListener((Future<String> f) -> {
                     if (f.cause() != null) {
                         promise.tryFailure(f.cause());
                     } else {
@@ -786,8 +781,7 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
     @Override
     public Future reverseRemoveAll() {
         Promise promise = new DefaultPromise<>(executor());
-        exec("reverse:killforward-all\0", DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS)
-                .addListener((Future<String> f) -> {
+        exec("reverse:killforward-all\0").addListener((Future<String> f) -> {
                     if (f.cause() != null) {
                         promise.tryFailure(f.cause());
                     } else {

@@ -32,8 +32,9 @@ public class TestAdbDevice {
     }
 
     public static void main(String[] args) throws Exception {
-        AdbDevice device = new SmartSocketAdbDevice("127.0.0.1", 6056, privateKey, publicKey);
-        System.out.println(device.shell("ls", "-l", "/").get());
-        device.close().get();
+
+//        AdbDevice device = new SmartSocketAdbDevice("127.0.0.1", 6056, privateKey, publicKey);
+//        System.out.println(device.shell("ls", "-l", "/").get());
+//        device.close().get();
     }
 }

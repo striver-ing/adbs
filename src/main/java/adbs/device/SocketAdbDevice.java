@@ -13,9 +13,6 @@ import io.netty.util.concurrent.Promise;
 import org.apache.commons.lang3.StringUtils;
 
 import java.security.interfaces.RSAPrivateCrtKey;
-import java.util.concurrent.TimeUnit;
-
-import static adbs.constant.Constants.DEFAULT_READ_TIMEOUT;
 
 public class SocketAdbDevice extends AbstractAdbDevice {
 
@@ -25,6 +22,8 @@ public class SocketAdbDevice extends AbstractAdbDevice {
 
     private final EventLoopGroup executors;
 
+    private volatile int readTimeout;
+
     public SocketAdbDevice(String host, Integer port, RSAPrivateCrtKey privateKey, byte[] publicKey) {
         super(host + ":" + port, privateKey, publicKey);
         this.host = host;
@@ -32,6 +31,7 @@ public class SocketAdbDevice extends AbstractAdbDevice {
         this.executors = new NioEventLoopGroup(1, r -> {
             return new Thread(r, "Connection-" + host + ":" + port);
         });
+        this.readTimeout = 0;
         this.connect();
     }
 
@@ -41,6 +41,15 @@ public class SocketAdbDevice extends AbstractAdbDevice {
 
     public Integer port() {
         return port;
+    }
+
+    public void readTimeout(int readTimeout) {
+        this.readTimeout = readTimeout;
+    }
+
+    @Override
+    protected int readTimeout() {
+        return this.readTimeout;
     }
 
     @Override
@@ -77,8 +86,7 @@ public class SocketAdbDevice extends AbstractAdbDevice {
     @Override
     public Future reload(int port) {
         Promise promise = new DefaultPromise<>(executor());
-        exec("tcpip:"+port+"\0", DEFAULT_READ_TIMEOUT, TimeUnit.SECONDS)
-                .addListener((Future<String> f) -> {
+        exec("tcpip:"+port+"\0").addListener((Future<String> f) -> {
                     if (f.cause() != null) {
                         promise.tryFailure(f.cause());
                     } else {

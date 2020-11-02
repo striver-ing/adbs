@@ -31,7 +31,7 @@ public class AdbHttpImpl implements AdbHttp {
     public FullHttpResponse execute(HttpRequest request, long timeout, TimeUnit unit) throws Exception {
         Promise<FullHttpResponse> promise = new DefaultPromise<>(device.executor());
         Future<Channel> future = device.open(
-                "tcp:" + port + "\0", timeout, unit,
+                "tcp:" + port + "\0",
                 channel -> {
                     channel.pipeline()
                             .addLast(new HttpClientCodec())

@@ -303,7 +303,7 @@ public class AdbChannel extends AbstractChannel implements ChannelInboundHandler
                 connectPromise = promise;
 
                 byte[] b = AdbChannel.this.remoteAddress.destination().getBytes(StandardCharsets.UTF_8);
-                buf = alloc().buffer(b.length);
+                buf = alloc().buffer(b.length, b.length);
                 buf.writeBytes(b);
                 parent().writeAndFlush(new AdbPacket(Command.A_OPEN, localId, remoteId, buf))
                         .addListener(f -> {

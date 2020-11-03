@@ -19,7 +19,7 @@ public class SyncDataDecoder extends SyncDecoder {
                 int len = in.getIntLE(readerIndex + 4);
                 if (in.readableBytes() >= 8 + len) {
                     in.skipBytes(8);
-                    ByteBuf payload = ctx.alloc().buffer(len);
+                    ByteBuf payload = ctx.alloc().buffer(len, len);
                     in.readBytes(payload);
                     out.add(new SyncData(payload));
                 }

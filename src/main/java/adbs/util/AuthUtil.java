@@ -68,7 +68,7 @@ public class AuthUtil {
 
         int capacity = (3 + numWords * 2) * 4;
 
-        ByteBuf buffer = Unpooled.buffer(capacity);
+        ByteBuf buffer = Unpooled.buffer(capacity, capacity);
         try {
             buffer.setIntLE(0, numWords);
             buffer.setIntLE(4, B32.subtract(N.modInverse(B32)).intValue());
@@ -98,7 +98,7 @@ public class AuthUtil {
 
     public static BigInteger sign(RSAPrivateCrtKey privateKey, byte[] data) {
         int totalLen = privateKey.getModulus().bitLength() / 8;
-        ByteBuf buffer = Unpooled.buffer(totalLen);
+        ByteBuf buffer = Unpooled.buffer(totalLen, totalLen);
         try {
             buffer.setByte(0, 0x00);
             buffer.setByte(1, 0x01);

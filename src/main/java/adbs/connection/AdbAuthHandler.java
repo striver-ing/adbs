@@ -50,7 +50,7 @@ public class AdbAuthHandler extends ChannelInboundHandlerAdapter {
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
-        ByteBuf payload = ctx.alloc().buffer(1024);
+        ByteBuf payload = ctx.alloc().buffer(1024, 8192);
         try {
             payload.writeCharSequence("host::features=", StandardCharsets.UTF_8);
             Feature[] features = Feature.values();
@@ -92,12 +92,12 @@ public class AdbAuthHandler extends ChannelInboundHandlerAdapter {
                         return;
                     }
                     byte[] sign = AuthUtil.sign(privateKey, payload).toByteArray();
-                    ByteBuf signBuf = ctx.alloc().buffer(sign.length);
+                    ByteBuf signBuf = ctx.alloc().buffer(sign.length, sign.length);
                     signBuf.writeBytes(sign);
                     write(ctx, new AdbPacket(Command.A_AUTH, Constants.ADB_AUTH_SIGNATURE, 0, signBuf));
                 } else if (state.compareAndSet(1, 2)) {
                     byte[] bytes = Arrays.copyOf(publicKey, publicKey.length + 1);
-                    ByteBuf keyBuf = ctx.alloc().buffer(bytes.length);
+                    ByteBuf keyBuf = ctx.alloc().buffer(bytes.length, bytes.length);
                     keyBuf.writeBytes(bytes);
                     write(ctx, new AdbPacket(Command.A_AUTH, Constants.ADB_AUTH_RSAPUBLICKEY, 0, keyBuf));
                 } else {

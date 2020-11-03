@@ -527,7 +527,7 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
                                         public void run() {
                                             try {
                                                 while (true) {
-                                                    ByteBuf data = ctx.alloc().buffer(SYNC_DATA_MAX);
+                                                    ByteBuf data = ctx.alloc().buffer(SYNC_DATA_MAX, SYNC_DATA_MAX);
                                                     boolean success = false;
                                                     try {
                                                         int size = data.writeBytes(src, SYNC_DATA_MAX);

@@ -29,7 +29,7 @@ public abstract class AdbFileChannel implements WritableByteChannel {
         while ((size = src.remaining()) > 0) {
             size = Math.min(size, Constants.MAX_PAYLOAD);
             total += size;
-            ByteBuf buf = allocator.buffer(size);
+            ByteBuf buf = allocator.buffer(size, size);
             boolean success = false;
             try {
                 byte[] bytes = new byte[size];

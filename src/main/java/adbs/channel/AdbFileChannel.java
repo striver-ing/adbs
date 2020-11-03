@@ -3,6 +3,7 @@ package adbs.channel;
 import adbs.constant.Constants;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
+import io.netty.buffer.Unpooled;
 import io.netty.util.ReferenceCountUtil;
 
 import java.io.IOException;
@@ -11,12 +12,9 @@ import java.nio.channels.WritableByteChannel;
 
 public abstract class AdbFileChannel implements WritableByteChannel {
 
-    private final ByteBufAllocator allocator;
-
     private volatile boolean open;
 
-    public AdbFileChannel(ByteBufAllocator allocator) {
-        this.allocator = allocator;
+    public AdbFileChannel() {
         this.open = true;
     }
 
@@ -26,9 +24,8 @@ public abstract class AdbFileChannel implements WritableByteChannel {
     public final int write(ByteBuffer src) throws IOException {
         int total = 0;
         int size;
-        ByteBuf buffer = allocator.buffer(Constants.MAX_PAYLOAD);
+        ByteBuf buffer = Unpooled.wrappedBuffer(src);
         try {
-            buffer.writeBytes(src);
             while ((size = buffer.readableBytes()) > 0) {
                 size = Math.min(size, Constants.MAX_PAYLOAD);
                 ByteBuf payload = buffer.readRetainedSlice(size);

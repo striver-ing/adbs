@@ -146,7 +146,7 @@ public class AdbChannel extends AbstractChannel implements ChannelInboundHandler
                     continue;
                 }
                 final long position = region.transferred();
-                long localFlushedAmount = region.transferTo(new AdbFileChannel(alloc()) {
+                long localFlushedAmount = region.transferTo(new AdbFileChannel() {
                     @Override
                     protected void write(ByteBuf buf) {
                         parent().writeAndFlush(new AdbPacket(Command.A_WRTE, localId, remoteId, buf));

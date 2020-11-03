@@ -9,6 +9,7 @@ import ch.qos.logback.classic.LoggerContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.security.interfaces.RSAPrivateCrtKey;
 import java.util.concurrent.TimeUnit;
@@ -32,9 +33,12 @@ public class TestAdbDevice {
     }
 
     public static void main(String[] args) throws Exception {
-
-//        AdbDevice device = new SmartSocketAdbDevice("127.0.0.1", 6056, privateKey, publicKey);
-//        System.out.println(device.shell("ls", "-l", "/").get());
-//        device.close().get();
+        AdbDevice device = new SmartSocketAdbDevice("192.168.137.102", 5555, privateKey, publicKey);
+        for(int i=0; i<1000; i++) {
+            System.out.println(device.shell("ls", "-l", "/").get());
+//            device.push(new File("D:\\tmp\\pdd.apk"), "/sdcard/pdd.apk").await();
+//            device.pull("/sdcard/pdd.apk", new File("D:\\tmp\\pdd.apk.bak")).await();
+//            System.out.println("success:" + i);
+        }
     }
 }

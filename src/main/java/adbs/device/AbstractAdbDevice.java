@@ -519,35 +519,32 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
                                                     promise.tryFailure(f1.cause());
                                                 }
                                             });
-
                                     //发送数据
                                     //启动一个新的线程读取流并发送数据
                                     new Thread() {
                                         @Override
                                         public void run() {
+                                            ByteBuf buffer = ctx.alloc().buffer(5 * SYNC_DATA_MAX);
                                             try {
                                                 while (true) {
-                                                    ByteBuf data = ctx.alloc().buffer(SYNC_DATA_MAX, SYNC_DATA_MAX);
-                                                    boolean success = false;
+                                                    int size = buffer.writeBytes(src, SYNC_DATA_MAX);
+                                                    if (size == -1) {
+                                                        break;
+                                                    }
+                                                    if (size == 0) {
+                                                        continue;
+                                                    }
+                                                    ByteBuf payload = buffer.readRetainedSlice(size);
                                                     try {
-                                                        int size = data.writeBytes(src, SYNC_DATA_MAX);
-                                                        if (size == -1) {
-                                                            break;
-                                                        }
-                                                        if (size == 0) {
-                                                            continue;
-                                                        }
-                                                        ctx.writeAndFlush(new SyncData(data))
+                                                        ctx.writeAndFlush(new SyncData(payload))
                                                                 .addListener(f2 -> {
                                                                     if (f2.cause() != null) {
                                                                         promise.tryFailure(f2.cause());
                                                                     }
                                                                 });
-                                                        success = true;
-                                                    } finally {
-                                                        if (!success) {
-                                                            ReferenceCountUtil.safeRelease(data);
-                                                        }
+                                                    } catch (Throwable cause) {
+                                                        ReferenceCountUtil.safeRelease(payload);
+                                                        throw cause;
                                                     }
                                                 }
                                                 //发送done
@@ -559,6 +556,8 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
                                                         });
                                             } catch (Throwable cause) {
                                                 promise.tryFailure(cause);
+                                            } finally {
+                                                ReferenceCountUtil.safeRelease(buffer);
                                             }
                                         }
                                     }.start();

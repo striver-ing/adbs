@@ -26,22 +26,22 @@ public abstract class AdbFileChannel implements WritableByteChannel {
     public final int write(ByteBuffer src) throws IOException {
         int total = 0;
         int size;
-        while ((size = src.remaining()) > 0) {
-            size = Math.min(size, Constants.MAX_PAYLOAD);
-            total += size;
-            ByteBuf buf = allocator.buffer(size, size);
-            boolean success = false;
-            try {
-                byte[] bytes = new byte[size];
-                src.get(bytes);
-                buf.writeBytes(bytes);
-                write(buf);
-                success = true;
-            } finally {
-                if (!success) {
-                    ReferenceCountUtil.safeRelease(buf);
+        ByteBuf buffer = allocator.buffer(Constants.MAX_PAYLOAD);
+        try {
+            buffer.writeBytes(src);
+            while ((size = buffer.readableBytes()) > 0) {
+                size = Math.min(size, Constants.MAX_PAYLOAD);
+                ByteBuf payload = buffer.readRetainedSlice(size);
+                total += size;
+                try {
+                    write(payload);
+                } catch (Throwable cause) {
+                    ReferenceCountUtil.safeRelease(payload);
+                    throw cause;
                 }
             }
+        } finally {
+            ReferenceCountUtil.safeRelease(buffer);
         }
         return total;
     }

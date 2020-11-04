@@ -56,6 +56,8 @@ public class TestAdbDevice {
 
     public static void main(String[] args) throws Exception {
         AdbDevice device = new SmartSocketAdbDevice("192.168.137.102", 5555, privateKey, publicKey);
-        install(device, new File("D:\\tmp\\tmallandroid_10002119.apk"));
+//        install(device, new File("D:\\tmp\\tmallandroid_10002119.apk"));
+        device.push(new File("D:\\tmp\\pdd.apk"), "/data/local/tmp/pdd.apk").get();
+        device.close();
     }
 }

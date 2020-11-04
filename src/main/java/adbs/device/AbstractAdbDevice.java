@@ -17,6 +17,7 @@ import adbs.exception.RemoteException;
 import adbs.util.ChannelUtil;
 import adbs.util.ShellUtil;
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
 import io.netty.handler.codec.LineBasedFrameDecoder;
 import io.netty.handler.codec.string.StringDecoder;
@@ -524,17 +525,17 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
                                     new Thread() {
                                         @Override
                                         public void run() {
-                                            ByteBuf buffer = ctx.alloc().buffer(5 * SYNC_DATA_MAX);
                                             try {
                                                 while (true) {
-                                                    int size = buffer.writeBytes(src, SYNC_DATA_MAX);
+                                                    byte[] buffer = new byte[SYNC_DATA_MAX];
+                                                    int size = src.read(buffer);
                                                     if (size == -1) {
                                                         break;
                                                     }
                                                     if (size == 0) {
                                                         continue;
                                                     }
-                                                    ByteBuf payload = buffer.readRetainedSlice(size);
+                                                    ByteBuf payload = Unpooled.wrappedBuffer(buffer, 0, size);
                                                     try {
                                                         ctx.writeAndFlush(new SyncData(payload))
                                                                 .addListener(f2 -> {
@@ -556,8 +557,6 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
                                                         });
                                             } catch (Throwable cause) {
                                                 promise.tryFailure(cause);
-                                            } finally {
-                                                ReferenceCountUtil.safeRelease(buffer);
                                             }
                                         }
                                     }.start();

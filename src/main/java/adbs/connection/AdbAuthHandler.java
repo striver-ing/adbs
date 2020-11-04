@@ -50,7 +50,7 @@ public class AdbAuthHandler extends ChannelInboundHandlerAdapter {
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
-        ByteBuf payload = ctx.alloc().buffer(1024, 8192);
+        ByteBuf payload = ctx.alloc().buffer(2048);
         try {
             payload.writeCharSequence("host::features=", StandardCharsets.UTF_8);
             Feature[] features = Feature.values();

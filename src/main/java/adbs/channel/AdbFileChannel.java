@@ -35,8 +35,6 @@ public abstract class AdbFileChannel implements WritableByteChannel {
                 } catch (Throwable cause) {
                     ReferenceCountUtil.safeRelease(payload);
                     throw cause;
-                } finally {
-                    buffer.discardSomeReadBytes();
                 }
             }
         } finally {

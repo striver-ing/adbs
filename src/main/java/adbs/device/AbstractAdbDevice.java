@@ -545,8 +545,6 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
                                                     } catch (Throwable cause) {
                                                         ReferenceCountUtil.safeRelease(payload);
                                                         throw cause;
-                                                    } finally {
-                                                        buffer.discardSomeReadBytes();
                                                     }
                                                 }
                                                 //发送done

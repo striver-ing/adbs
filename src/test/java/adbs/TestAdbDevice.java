@@ -3,13 +3,16 @@ package adbs;
 import adbs.device.AdbDevice;
 import adbs.device.SmartSocketAdbDevice;
 import adbs.device.SocketAdbDevice;
+import adbs.exception.RemoteException;
 import adbs.util.AuthUtil;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.LoggerContext;
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.interfaces.RSAPrivateCrtKey;
 import java.util.concurrent.TimeUnit;
@@ -32,13 +35,27 @@ public class TestAdbDevice {
         }
     }
 
+    private static String[] expandArgs(String head, String tail, String... args) {
+        String[] expandArgs = new String[args.length + 2];
+        expandArgs[0] = head;
+        System.arraycopy(args, 0, expandArgs, 1, args.length);
+        expandArgs[args.length + 1] = tail;
+        return expandArgs;
+    }
+
+    public static void install(AdbDevice device, File apk, String... args) throws Exception {
+        String remote = "/data/local/tmp/" + apk.getName();
+        device.push(apk, remote).await();
+        String result = device.shell("pm", expandArgs("install", remote, args)).get();
+        result = StringUtils.trim(result);
+        device.shell("rm", "-f", remote).await();
+        if (!result.startsWith("Success")) {
+            throw new RemoteException(result);
+        }
+    }
+
     public static void main(String[] args) throws Exception {
         AdbDevice device = new SmartSocketAdbDevice("192.168.137.102", 5555, privateKey, publicKey);
-        for(int i=0; i<1000; i++) {
-            System.out.println(device.shell("ls", "-l", "/").get());
-//            device.push(new File("D:\\tmp\\pdd.apk"), "/sdcard/pdd.apk").await();
-//            device.pull("/sdcard/pdd.apk", new File("D:\\tmp\\pdd.apk.bak")).await();
-//            System.out.println("success:" + i);
-        }
+        install(device, new File("D:\\tmp\\tmallandroid_10002119.apk"));
     }
 }

@@ -140,26 +140,6 @@ public class AdbChannel extends AbstractChannel implements ChannelInboundHandler
                 if (!buf.isReadable()) {
                     in.remove();
                 }
-            } else if (msg instanceof FileRegion) {
-                FileRegion region = (FileRegion) msg;
-                if (region.transferred() >= region.count()) {
-                    in.remove();
-                    continue;
-                }
-                final long position = region.transferred();
-                long localFlushedAmount = region.transferTo(new AdbFileChannel() {
-                    @Override
-                    protected void write(ByteBuf buf) {
-                        parent().writeAndFlush(new AdbPacket(Command.A_WRTE, localId, remoteId, buf));
-                    }
-                }, position);
-                if (localFlushedAmount > 0) {
-                    in.progress(localFlushedAmount);
-                    if (region.transferred() >= region.count()) {
-                        in.remove();
-                    }
-                    continue;
-                }
             } else {
                 in.remove(new UnsupportedOperationException(
                         "unsupported message type: " + StringUtil.simpleClassName(msg)));

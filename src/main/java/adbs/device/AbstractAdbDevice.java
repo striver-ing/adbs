@@ -365,6 +365,11 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
                                 public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
                                     promise.tryFailure(cause);
                                 }
+
+                                @Override
+                                public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+                                    promise.tryFailure(new ClosedChannelException());
+                                }
                             });
                 });
         future.addListener((Future<Channel> f0) -> {
@@ -415,6 +420,11 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
                                 @Override
                                 public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
                                     promise.tryFailure(cause);
+                                }
+
+                                @Override
+                                public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+                                    promise.tryFailure(new ClosedChannelException());
                                 }
                             });
                 });
@@ -477,6 +487,11 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
                                 @Override
                                 public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
                                     promise.tryFailure(cause);
+                                }
+
+                                @Override
+                                public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+                                    promise.tryFailure(new ClosedChannelException());
                                 }
                             });
                 });
@@ -576,6 +591,11 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
                                 @Override
                                 public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
                                     promise.tryFailure(cause);
+                                }
+
+                                @Override
+                                public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+                                    promise.tryFailure(new ClosedChannelException());
                                 }
                             });
                 });

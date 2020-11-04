@@ -9,6 +9,7 @@ import adbs.entity.ConnectResult;
 import adbs.util.AuthUtil;
 import com.google.common.collect.ImmutableSet;
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.util.ReferenceCountUtil;
@@ -92,13 +93,11 @@ public class AdbAuthHandler extends ChannelInboundHandlerAdapter {
                         return;
                     }
                     byte[] sign = AuthUtil.sign(privateKey, payload).toByteArray();
-                    ByteBuf signBuf = ctx.alloc().buffer(sign.length, sign.length);
-                    signBuf.writeBytes(sign);
+                    ByteBuf signBuf = Unpooled.wrappedBuffer(sign);
                     write(ctx, new AdbPacket(Command.A_AUTH, Constants.ADB_AUTH_SIGNATURE, 0, signBuf));
                 } else if (state.compareAndSet(1, 2)) {
                     byte[] bytes = Arrays.copyOf(publicKey, publicKey.length + 1);
-                    ByteBuf keyBuf = ctx.alloc().buffer(bytes.length, bytes.length);
-                    keyBuf.writeBytes(bytes);
+                    ByteBuf keyBuf = Unpooled.wrappedBuffer(bytes);
                     write(ctx, new AdbPacket(Command.A_AUTH, Constants.ADB_AUTH_RSAPUBLICKEY, 0, keyBuf));
                 } else {
                     ctx.fireExceptionCaught(new Exception("State error:" + state));

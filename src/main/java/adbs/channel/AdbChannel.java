@@ -3,6 +3,7 @@ package adbs.channel;
 import adbs.constant.Command;
 import adbs.entity.AdbPacket;
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
 import io.netty.util.ReferenceCountUtil;
 import io.netty.util.internal.StringUtil;
@@ -303,8 +304,7 @@ public class AdbChannel extends AbstractChannel implements ChannelInboundHandler
                 connectPromise = promise;
 
                 byte[] b = AdbChannel.this.remoteAddress.destination().getBytes(StandardCharsets.UTF_8);
-                buf = alloc().buffer(b.length, b.length);
-                buf.writeBytes(b);
+                buf = Unpooled.wrappedBuffer(b);
                 parent().writeAndFlush(new AdbPacket(Command.A_OPEN, localId, remoteId, buf))
                         .addListener(f -> {
                             if (f.cause() != null) {

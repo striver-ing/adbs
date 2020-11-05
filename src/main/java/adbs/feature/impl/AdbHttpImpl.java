@@ -9,12 +9,14 @@ import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.HttpClientCodec;
 import io.netty.handler.codec.http.HttpObjectAggregator;
 import io.netty.handler.codec.http.HttpRequest;
+import io.netty.util.ReferenceCountUtil;
 import io.netty.util.concurrent.DefaultPromise;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.Promise;
 
 import java.nio.channels.ClosedChannelException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 public class AdbHttpImpl implements AdbHttp {
 
@@ -50,7 +52,10 @@ public class AdbHttpImpl implements AdbHttp {
                                 @Override
                                 public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
                                     if (msg instanceof FullHttpResponse) {
-                                        promise.trySuccess((FullHttpResponse) msg);
+                                        if (!promise.trySuccess((FullHttpResponse) msg)) {
+                                            //如果trySuccess失败，则直接将msg释放掉, 避免内存泄漏
+                                            ReferenceCountUtil.safeRelease(msg);
+                                        }
                                     } else {
                                         ctx.fireChannelRead(msg);
                                     }
@@ -63,8 +68,13 @@ public class AdbHttpImpl implements AdbHttp {
                             });
         });
         Channel channel = future.get(timeout, unit);
+        Future timeoutFuture = channel.eventLoop().schedule(() -> {
+            promise.tryFailure(new TimeoutException("timeout"));
+        }, timeout, unit);
         try {
-            return promise.get(timeout, unit);
+            FullHttpResponse response = promise.get();
+            timeoutFuture.cancel(true);
+            return response;
         } finally {
             channel.close();
         }

@@ -7,7 +7,6 @@ import adbs.constant.Feature;
 import adbs.entity.AdbPacket;
 import adbs.entity.ConnectResult;
 import adbs.util.AuthUtil;
-import com.google.common.collect.ImmutableSet;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
@@ -20,6 +19,7 @@ import java.net.ProtocolException;
 import java.nio.charset.StandardCharsets;
 import java.security.interfaces.RSAPrivateCrtKey;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -136,7 +136,7 @@ public class AdbAuthHandler extends ChannelInboundHandlerAdapter {
                                 }
                                 features.add(fe);
                             }
-                            devModel.setFeatures(ImmutableSet.copyOf(features));
+                            devModel.setFeatures(Collections.unmodifiableSet(features));
                         }
                     }
                 }

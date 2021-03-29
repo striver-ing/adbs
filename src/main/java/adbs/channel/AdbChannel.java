@@ -1,6 +1,7 @@
 package adbs.channel;
 
 import adbs.constant.Command;
+import adbs.constant.Constants;
 import adbs.entity.AdbPacket;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -130,8 +131,18 @@ public class AdbChannel extends AbstractChannel implements ChannelInboundHandler
 
                 int localFlushedAmount = buf.readableBytes();
                 try {
-                    buf.retain();
-                    parent().writeAndFlush(new AdbPacket(Command.A_WRTE, localId, remoteId, buf));
+                    /**
+                     * @see adbs.constant.Constants.WRITE_DATA_MAX;
+                     * 此处不能直接一次write, 超过大小的得分段write
+                     */
+                    while (true) {
+                        int size = Math.min(buf.readableBytes(), Constants.WRITE_DATA_MAX);
+                        if (size == 0) {
+                            break;
+                        }
+                        ByteBuf tmp = buf.readRetainedSlice(size);
+                        parent().writeAndFlush(new AdbPacket(Command.A_WRTE, localId, remoteId, tmp));
+                    }
                 } catch (Exception e) {
                     ReferenceCountUtil.safeRelease(buf);
                     throw e;

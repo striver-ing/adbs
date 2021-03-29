@@ -28,6 +28,8 @@ public class Constants {
 
     public static final int SYNC_DATA_MAX = 64 * 1024;
 
+    public static final int WRITE_DATA_MAX = 256 * 1024;
+
     public static final int S_IFMT = 00170000;
     public static final int S_IRWXU = 00700;
     public static final int S_IRUSR = 00400;

@@ -47,12 +47,6 @@ public class AdbPacketCodec extends ByteToMessageCodec<AdbPacket> {
         ByteBuf payload = null;
         if (len > 0) {
             payload = in.readRetainedSlice(len);
-            int actualChecksum = MessageUtil.checksum(payload);
-            if (actualChecksum != checksum) {
-                ReferenceCountUtil.release(payload);
-                ctx.fireExceptionCaught(new ProtocolException("Checksum error expect=" + checksum + ", actual=" + actualChecksum));
-                return;
-            }
         }
         AdbPacket message = new AdbPacket(command, arg0, arg1, len, checksum, magic, payload);
         if (logger.isDebugEnabled()) {

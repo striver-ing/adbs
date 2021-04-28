@@ -15,6 +15,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.interfaces.RSAPrivateCrtKey;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 public class TestAdbDevice {
@@ -55,9 +56,12 @@ public class TestAdbDevice {
     }
 
     public static void main(String[] args) throws Exception {
-        AdbDevice device = new SmartSocketAdbDevice("192.168.137.102", 5555, privateKey, publicKey);
+        AdbDevice device = new SmartSocketAdbDevice("192.168.137.136", 5555, privateKey, publicKey);
+        //device.reverse("tcp:8000", "tcp:8000").get();
+        String result = device.reverse("tcp:5000", "tcp:5000").get();
+        System.out.println(result);
 //        install(device, new File("D:\\tmp\\tmallandroid_10002119.apk"));
-        device.push(new File("D:\\tmp\\pdd.apk"), "/data/local/tmp/pdd.apk").get();
-        device.close();
+//        device.push(new File("D:\\tmp\\pdd.apk"), "/data/local/tmp/pdd.apk").get();
+//        device.close();
     }
 }

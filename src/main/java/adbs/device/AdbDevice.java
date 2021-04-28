@@ -101,9 +101,9 @@ public interface AdbDevice extends AttributeMap {
      */
     Future reload(int port);
 
-    Future reverse(String destination, AdbChannelInitializer initializer);
+    Future<String> reverse(String destination, AdbChannelInitializer initializer);
 
-    Future reverse(String remote, String local);
+    Future<String> reverse(String remote, String local);
 
     Future<String[]> reverseList();
 

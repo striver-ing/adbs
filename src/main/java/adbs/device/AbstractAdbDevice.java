@@ -682,17 +682,27 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
         return promise;
     }
 
-    private static void assertResult(String result) throws RemoteException {
-        if (result.startsWith("FAIL")) {
+    private static String readResult(String result) throws RemoteException {
+        if (StringUtils.isEmpty(result)) {
+            return null;
+        } else if (result.startsWith("FAIL")) {
             int len = Integer.valueOf(result.substring(4, 8), 16);
             throw new RemoteException(result.substring(8, 8 + len));
-        } else if (!"OKAY".equals(result)) {
-            throw new RemoteException("unknown reply: " + result);
+        } else if (result.startsWith("OKAY")) {
+            if (result.length() > 4) {
+                int len = Integer.valueOf(result.substring(4, 8), 16);
+                return result.substring(8, 8 + len);
+            } else {
+                return null;
+            }
+        } else {
+            int len = Integer.valueOf(result.substring(0, 4), 16);
+            return result.substring(4, 4 + len);
         }
     }
 
     @Override
-    public Future reverse(String destination, AdbChannelInitializer initializer) {
+    public Future<String> reverse(String destination, AdbChannelInitializer initializer) {
         String cmd = "reverse:forward:" + destination + ";" + destination + "\0";
         Promise promise = new DefaultPromise<>(executor());
         exec(cmd).addListener((Future<String> f) -> {
@@ -700,10 +710,9 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
                         promise.tryFailure(f.cause());
                     } else {
                         try {
-                            String s = StringUtils.trim(f.getNow());
-                            assertResult(s);
+                            String result = readResult(f.getNow());
                             reverseMap.put(destination, initializer);
-                            promise.trySuccess(null);
+                            promise.trySuccess(result);
                         } catch (Throwable cause) {
                             promise.tryFailure(cause);
                         }
@@ -713,7 +722,7 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
     }
 
     @Override
-    public Future reverse(String remote, String local) {
+    public Future<String> reverse(String remote, String local) {
         String[] addr = local.split(":");
         String protocol;
         String host;
@@ -739,10 +748,9 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
                         promise.tryFailure(f.cause());
                     } else {
                         try {
-                            String s = StringUtils.trim(f.getNow());
-                            assertResult(s);
+                            String result = readResult(f.getNow());
                             reverseMap.put(local, new TCPReverse(host, port, executor()));
-                            promise.trySuccess(null);
+                            promise.trySuccess(result);
                         } catch (Throwable cause) {
                             promise.tryFailure(cause);
                         }
@@ -759,13 +767,12 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
                         promise.tryFailure(f.cause());
                     } else {
                         try {
-                            String s = StringUtils.trim(f.getNow());
-                            assertResult(s);
+                            String result = StringUtils.trim(readResult(f.getNow()));
                             String[] revs;
-                            if (StringUtils.isEmpty(s)) {
+                            if (StringUtils.isEmpty(result)) {
                                 revs = ArrayUtils.EMPTY_STRING_ARRAY;
                             } else {
-                                revs = s.split("\r\n|\n|\r");
+                                revs = result.split("\r\n|\n|\r");
                             }
                             promise.trySuccess(revs);
                         } catch (Throwable cause) {
@@ -784,10 +791,9 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
                         promise.tryFailure(f.cause());
                     } else {
                         try {
-                            String s = StringUtils.trim(f.getNow());
-                            assertResult(s);
+                            String result = readResult(f.getNow());
                             reverseMap.remove(destination);
-                            promise.trySuccess(null);
+                            promise.trySuccess(result);
                         } catch (Throwable cause) {
                             promise.tryFailure(cause);
                         }
@@ -804,10 +810,9 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
                         promise.tryFailure(f.cause());
                     } else {
                         try {
-                            String s = StringUtils.trim(f.getNow());
-                            assertResult(s);
+                            String result = readResult(f.getNow());
                             reverseMap.clear();
-                            promise.trySuccess(null);
+                            promise.trySuccess(result);
                         } catch (Throwable cause) {
                             promise.tryFailure(cause);
                         }

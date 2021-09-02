@@ -2,9 +2,9 @@ package adbs;
 
 import adbs.device.AdbDevice;
 import adbs.device.SmartSocketAdbDevice;
-import adbs.device.SocketAdbDevice;
 import adbs.exception.RemoteException;
 import adbs.util.AuthUtil;
+import adbs.util.SimpleHttpClient;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.LoggerContext;
 import org.apache.commons.lang3.StringUtils;
@@ -12,11 +12,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.interfaces.RSAPrivateCrtKey;
-import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 public class TestAdbDevice {
 
@@ -56,10 +53,11 @@ public class TestAdbDevice {
     }
 
     public static void main(String[] args) throws Exception {
-        AdbDevice device = new SmartSocketAdbDevice("192.168.137.136", 5555, privateKey, publicKey);
-        //device.reverse("tcp:8000", "tcp:8000").get();
-        String result = device.reverse("tcp:5000", "tcp:5000").get();
-        System.out.println(result);
+        AdbDevice device = new SmartSocketAdbDevice("127.0.0.1", 6056, privateKey, publicKey);
+        SimpleHttpClient httpClient = new SimpleHttpClient(device, 5000);
+        SimpleHttpClient.SimpleHttpResponse response = httpClient.get("/test?ok");
+        String body = response.bodyAsString();
+        System.out.println(body);
 //        install(device, new File("D:\\tmp\\tmallandroid_10002119.apk"));
 //        device.push(new File("D:\\tmp\\pdd.apk"), "/data/local/tmp/pdd.apk").get();
 //        device.close();

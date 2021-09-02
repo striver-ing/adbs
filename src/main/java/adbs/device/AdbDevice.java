@@ -5,15 +5,12 @@ import adbs.constant.DeviceType;
 import adbs.constant.Feature;
 import adbs.entity.sync.SyncDent;
 import adbs.entity.sync.SyncStat;
-import io.netty.channel.Channel;
-import io.netty.channel.ChannelInboundHandler;
-import io.netty.channel.EventLoop;
+import io.netty.channel.*;
 import io.netty.util.AttributeMap;
 import io.netty.util.concurrent.Future;
 
 import java.io.*;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
 
 public interface AdbDevice extends AttributeMap {
 
@@ -43,9 +40,17 @@ public interface AdbDevice extends AttributeMap {
 
     EventLoop executor();
 
-    Future<Channel> open(String destination, AdbChannelInitializer initializer);
+    Future<Channel> open(String destination, int timeoutMs, AdbChannelInitializer initializer);
 
-    Future<String> exec(String destination);
+    default Future<Channel> open(String destination, AdbChannelInitializer initializer) {
+        return open(destination, 30000, initializer);
+    }
+
+    Future<String> exec(String destination, int timeoutMs);
+
+    default Future<String> exec(String destination) {
+        return exec(destination, 30000);
+    }
 
     Future<String> shell(String cmd, String... args);
 

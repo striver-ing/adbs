@@ -24,8 +24,6 @@ public class Constants {
 
     public static final int ADB_PROTOCOL_HEADER_SIZE = 24;
 
-    public static final int DEFAULT_READ_TIMEOUT = 30;
-
     public static final int SYNC_DATA_MAX = 64 * 1024;
 
     public static final int WRITE_DATA_MAX = 256 * 1024;

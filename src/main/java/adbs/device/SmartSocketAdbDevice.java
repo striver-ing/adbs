@@ -34,8 +34,6 @@ public class SmartSocketAdbDevice extends DefaultAttributeMap implements AdbDevi
 
     private volatile boolean isClosed;
 
-    private volatile int readTimeout;
-
     public SmartSocketAdbDevice(String host, Integer port, RSAPrivateCrtKey privateKey, byte[] publicKey) {
         this.host = host;
         this.port = port;
@@ -44,11 +42,6 @@ public class SmartSocketAdbDevice extends DefaultAttributeMap implements AdbDevi
         });
         this.isClosed = false;
         this.device = new ActualSocketDevice(host, port, privateKey, publicKey);
-        this.readTimeout = 0;
-    }
-
-    public void readTimeout(int readTimeout) {
-        this.readTimeout = readTimeout;
     }
 
     @Override
@@ -92,13 +85,13 @@ public class SmartSocketAdbDevice extends DefaultAttributeMap implements AdbDevi
     }
 
     @Override
-    public Future<Channel> open(String destination, AdbChannelInitializer initializer) {
-        return device.open(destination, initializer);
+    public Future<Channel> open(String destination, int timeoutMs, AdbChannelInitializer initializer) {
+        return device.open(destination, timeoutMs, initializer);
     }
 
     @Override
-    public Future<String> exec(String destination) {
-        return device.exec(destination);
+    public Future<String> exec(String destination, int timeoutMs) {
+        return device.exec(destination, timeoutMs);
     }
 
     @Override
@@ -205,11 +198,6 @@ public class SmartSocketAdbDevice extends DefaultAttributeMap implements AdbDevi
         public ActualSocketDevice(String host, Integer port, RSAPrivateCrtKey privateKey, byte[] publicKey) {
             super(host + ":" + port, privateKey, publicKey);
             connect();
-        }
-
-        @Override
-        protected int readTimeout() {
-            return SmartSocketAdbDevice.this.readTimeout;
         }
 
         @Override

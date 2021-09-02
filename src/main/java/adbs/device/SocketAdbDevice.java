@@ -22,8 +22,6 @@ public class SocketAdbDevice extends AbstractAdbDevice {
 
     private final EventLoopGroup executors;
 
-    private volatile int readTimeout;
-
     public SocketAdbDevice(String host, Integer port, RSAPrivateCrtKey privateKey, byte[] publicKey) {
         super(host + ":" + port, privateKey, publicKey);
         this.host = host;
@@ -31,7 +29,6 @@ public class SocketAdbDevice extends AbstractAdbDevice {
         this.executors = new NioEventLoopGroup(1, r -> {
             return new Thread(r, "Connection-" + host + ":" + port);
         });
-        this.readTimeout = 0;
         this.connect();
     }
 
@@ -41,15 +38,6 @@ public class SocketAdbDevice extends AbstractAdbDevice {
 
     public Integer port() {
         return port;
-    }
-
-    public void readTimeout(int readTimeout) {
-        this.readTimeout = readTimeout;
-    }
-
-    @Override
-    protected int readTimeout() {
-        return this.readTimeout;
     }
 
     @Override

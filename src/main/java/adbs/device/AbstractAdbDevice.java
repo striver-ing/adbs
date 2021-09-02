@@ -32,6 +32,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.ProtocolException;
@@ -134,8 +135,6 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
         return closePromise;
     }
 
-    abstract protected int readTimeout();
-
     protected abstract ChannelFuture newChannel(AdbChannelInitializer initializer);
 
     protected void connect() {
@@ -217,13 +216,12 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
     }
 
     @Override
-    public Future<Channel> open(String destination, AdbChannelInitializer initializer) {
+    public Future<Channel> open(String destination, int timeoutMs, AdbChannelInitializer initializer) {
         //如果连接被关闭的情况下，直接抛出异常
         if (isClosed()) {
             throw new RuntimeException("Connection Closed");
         }
         Promise<Channel> promise = new DefaultPromise<>(executor());
-        Long timeoutMs = TimeUnit.SECONDS.toMillis(readTimeout());
         int localId = channelIdGen.getAndIncrement();
         String channelName = ChannelUtil.getChannelName(localId);
         connectPromise.addListener((Future<Channel> f0) -> {
@@ -233,7 +231,7 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
                 try {
                     Channel channel = f0.getNow();
                     AdbChannel adbChannel = new AdbChannel(channel, localId, 0);
-                    adbChannel.config().setConnectTimeoutMillis(timeoutMs.intValue());
+                    adbChannel.config().setConnectTimeoutMillis(timeoutMs);
                     initializer.initChannel(adbChannel);
                     channel.pipeline().addLast(channelName, adbChannel);
                     adbChannel.connect(new AdbChannelAddress(destination, localId))
@@ -253,10 +251,10 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
     }
 
     @Override
-    public Future<String> exec(String destination) {
+    public Future<String> exec(String destination, int timeoutMs) {
         Promise<String> promise = new DefaultPromise<>(executor());
         StringBuilder sb = new StringBuilder();
-        Future<Channel> future = open(destination, channel -> {
+        Future<Channel> future = open(destination, timeoutMs, channel -> {
             channel.pipeline()
                     .addLast(new StringDecoder(StandardCharsets.UTF_8))
                     .addLast(new StringEncoder(StandardCharsets.UTF_8))
@@ -295,12 +293,11 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
                 });
             }
         });
-        int readTimeout = readTimeout();
-        if (readTimeout > 0) {
+        if (timeoutMs > 0) {
             executor().schedule(() -> {
-                TimeoutException cause = new TimeoutException("exec timed out: " + destination.trim());
+                TimeoutException cause = new TimeoutException("exec timeout: " + destination.trim());
                 promise.tryFailure(cause);
-            }, readTimeout, TimeUnit.SECONDS);
+            }, timeoutMs, TimeUnit.MILLISECONDS);
         }
 
         return promise;

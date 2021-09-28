@@ -106,14 +106,15 @@ public class SimpleHttpClient {
         return execute(HttpMethod.GET, uri, headers, null, DEFAULT_TIMEOUT);
     }
 
-    public SimpleHttpResponse post(String uri, byte[] body) throws Exception {
+    public SimpleHttpResponse post(String uri, String contentType, byte[] body) throws Exception {
         HttpHeaders headers = new DefaultHttpHeaders();
-        headers.set(HttpHeaderNames.CONTENT_TYPE, HttpHeaderValues.APPLICATION_X_WWW_FORM_URLENCODED);
+        headers.set(HttpHeaderNames.CONTENT_TYPE, contentType);
+        headers.set(HttpHeaderNames.CONTENT_LENGTH, body.length);
         return execute(HttpMethod.POST, uri, headers, body, DEFAULT_TIMEOUT);
     }
 
     public SimpleHttpResponse post(String uri, String body) throws Exception {
-        return post(uri, body.getBytes(StandardCharsets.UTF_8));
+        return post(uri, HttpHeaderValues.APPLICATION_X_WWW_FORM_URLENCODED.toString(), body.getBytes(StandardCharsets.UTF_8));
     }
 
     public static class SimpleHttpResponse {

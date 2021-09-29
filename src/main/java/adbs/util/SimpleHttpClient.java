@@ -92,13 +92,18 @@ public class SimpleHttpClient {
         try {
             channel.writeAndFlush(request).get(timeoutMs, TimeUnit.MILLISECONDS);
         } catch (Throwable cause) {
+            channel.close().get(timeoutMs, TimeUnit.MILLISECONDS);
             throw cause;
         } finally {
             if (request instanceof FullHttpRequest && ((FullHttpRequest) request).refCnt() > 0) {
                 ReferenceCountUtil.safeRelease(request);
             }
         }
-        return promise.get(timeoutMs, TimeUnit.MILLISECONDS);
+        try {
+            return promise.get(timeoutMs, TimeUnit.MILLISECONDS);
+        } finally {
+            channel.close().get(timeoutMs, TimeUnit.MILLISECONDS);
+        }
     }
 
     public SimpleHttpResponse get(String uri) throws Exception {

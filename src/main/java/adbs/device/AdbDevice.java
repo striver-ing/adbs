@@ -52,7 +52,11 @@ public interface AdbDevice extends AttributeMap {
         return exec(destination, 30000);
     }
 
-    Future<String> shell(String cmd, String... args);
+    Future<String> shell(String cmd, int timeoutMs, String... args);
+
+    default Future<String> shell(String cmd, String... args) {
+        return shell(cmd, 0, args);
+    }
 
     Future<Channel> shell(boolean lineFramed, ChannelInboundHandler handler);
 

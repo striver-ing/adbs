@@ -304,9 +304,9 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
     }
 
     @Override
-    public Future<String> shell(String cmd, String... args) {
+    public Future<String> shell(String cmd, int timeoutMs, String... args) {
         String shellCmd = ShellUtil.buildShellCmd(cmd, args);
-        return exec(shellCmd);
+        return exec(shellCmd, timeoutMs);
     }
 
     @Override

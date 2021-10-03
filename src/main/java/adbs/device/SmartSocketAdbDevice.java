@@ -95,8 +95,8 @@ public class SmartSocketAdbDevice extends DefaultAttributeMap implements AdbDevi
     }
 
     @Override
-    public Future<String> shell(String cmd, String... args) {
-        return device.shell(cmd, args);
+    public Future<String> shell(String cmd, int timeoutMs, String... args) {
+        return device.shell(cmd, timeoutMs, args);
     }
 
     @Override

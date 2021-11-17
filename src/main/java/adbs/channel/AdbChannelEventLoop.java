@@ -25,14 +25,12 @@ public class AdbChannelEventLoop extends AbstractEventLoop {
         return register(promise.channel(), promise);
     }
 
-    @SuppressWarnings("deprecation")
     @Override
     public ChannelFuture register(Channel channel, ChannelPromise promise) {
         channel.unsafe().register(this, promise);
         return promise;
     }
 
-    @SuppressWarnings("deprecation")
     @Override
     public void shutdown() {
         //不需要实现，这个线程是沿用的

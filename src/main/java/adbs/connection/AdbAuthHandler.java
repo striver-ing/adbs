@@ -5,7 +5,7 @@ import adbs.constant.Constants;
 import adbs.constant.DeviceType;
 import adbs.constant.Feature;
 import adbs.entity.AdbPacket;
-import adbs.entity.ConnectResult;
+import adbs.entity.DeviceInfo;
 import adbs.util.AuthUtil;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -108,7 +108,10 @@ public class AdbAuthHandler extends ChannelInboundHandlerAdapter {
                 //当连接上以后，把认证的handler从pipeline中移除掉
                 ctx.pipeline().remove(this);
 
-                ConnectResult devModel = new ConnectResult();
+                String product = null;
+                String model = null;
+                String device = null;
+                Set<Feature> features = null;
                 String p = new String(payload, StandardCharsets.UTF_8);
                 String[] pieces = p.split(":");
                 if (pieces.length > 2) {
@@ -121,27 +124,30 @@ public class AdbAuthHandler extends ChannelInboundHandlerAdapter {
                         String key = kv[0];
                         String value = kv[1];
                         if ("ro.product.name".equals(key)) {
-                            devModel.setProduct(value);
+                            product = value;
                         } else if ("ro.product.model".equals(key)) {
-                            devModel.setModel(value);
+                            model = value;
                         } else if ("ro.product.device".equals(key)) {
-                            devModel.setDevice(value);
+                            device = value;
                         } else if ("features".equals(key)) {
-                            Set<Feature> features = new HashSet<>();
+                            Set<Feature> fts = new HashSet<>();
                             for(String f : value.split(",")) {
                                 Feature fe = Feature.findByCode(f);
                                 if (fe == null) {
                                     logger.warn("Unknown feature: " + f);
                                     continue;
                                 }
-                                features.add(fe);
+                                fts.add(fe);
                             }
-                            devModel.setFeatures(Collections.unmodifiableSet(features));
+                            features = Collections.unmodifiableSet(fts);
                         }
                     }
                 }
-                devModel.setType(DeviceType.findByCode(pieces[0]));
-                ctx.fireUserEventTriggered(devModel);
+                DeviceInfo deviceInfo = new DeviceInfo(
+                        DeviceType.findByCode(pieces[0]),
+                        model, product, device, features
+                );
+                ctx.fireChannelRead(deviceInfo);
                 break;
 
             default:

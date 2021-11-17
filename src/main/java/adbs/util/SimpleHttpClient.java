@@ -3,6 +3,7 @@ package adbs.util;
 import adbs.device.AdbDevice;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.handler.codec.http.*;
@@ -30,80 +31,81 @@ public class SimpleHttpClient {
     }
 
     public SimpleHttpResponse execute(HttpMethod method, String uri, HttpHeaders headers, byte[] body, int timeoutMs) throws Exception {
-        Promise<SimpleHttpResponse> promise = new DefaultPromise<>(device.executor());
-        Future<Channel> future = device.open(
-                "tcp:" + port + "\0",
-                timeoutMs,
-                channel -> {
-                    channel.pipeline()
-                            .addLast(new HttpClientCodec())
-                            .addLast(new HttpObjectAggregator(8 * 1024 * 1024))
-                            .addLast(new ChannelInboundHandlerAdapter(){
-
-                                @Override
-                                public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
-                                    if (msg instanceof FullHttpResponse) {
-                                        try {
-                                            FullHttpResponse response = (FullHttpResponse) msg;
-                                            byte[] responseBody;
-                                            if (response.content() != null) {
-                                                responseBody = new byte[response.content().readableBytes()];
-                                                response.content().readBytes(responseBody);
-                                            } else {
-                                                responseBody = null;
-                                            }
-                                            SimpleHttpResponse resp = new SimpleHttpResponse(
-                                                    response.protocolVersion(),
-                                                    response.status(),
-                                                    response.headers(),
-                                                    responseBody
-                                            );
-                                            promise.trySuccess(resp);
-                                        } catch (Throwable cause) {
-                                            promise.tryFailure(cause);
-                                        } finally {
-                                            ReferenceCountUtil.safeRelease(msg);
-                                        }
-                                    } else {
-                                        ctx.fireChannelRead(msg);
-                                    }
-                                }
-
-                                @Override
-                                public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-                                    promise.tryFailure(new ClosedChannelException());
-                                }
-                            });
-        });
-        Channel channel = future.get(timeoutMs, TimeUnit.MILLISECONDS);
-        HttpRequest request;
-        if (body == null) {
-            request = new DefaultHttpRequest(HttpVersion.HTTP_1_1, method, uri, headers);
-        } else {
-            request = new DefaultFullHttpRequest(
-                    HttpVersion.HTTP_1_1,
-                    method,
-                    uri,
-                    Unpooled.wrappedBuffer(body),
-                    headers,
-                    headers
-            );
-        }
-        try {
-            channel.writeAndFlush(request).get(timeoutMs, TimeUnit.MILLISECONDS);
-        } catch (Throwable cause) {
-            channel.close().get(timeoutMs, TimeUnit.MILLISECONDS);
-            throw cause;
-        } finally {
-            if (request instanceof FullHttpRequest && ((FullHttpRequest) request).refCnt() > 0) {
-                ReferenceCountUtil.safeRelease(request);
-            }
-        }
-        try {
-            return promise.get(timeoutMs, TimeUnit.MILLISECONDS);
-        } finally {
-            channel.close().get(timeoutMs, TimeUnit.MILLISECONDS);
-        }
+//        Promise<SimpleHttpResponse> promise = device.eventLoop().newPromise();
+//        ChannelFuture future = device.open(
+//                "tcp:" + port + "\0",
+//                timeoutMs,
+//                channel -> {
+//                    channel.pipeline()
+//                            .addLast(new HttpClientCodec())
+//                            .addLast(new HttpObjectAggregator(8 * 1024 * 1024))
+//                            .addLast(new ChannelInboundHandlerAdapter(){
+//
+//                                @Override
+//                                public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+//                                    if (msg instanceof FullHttpResponse) {
+//                                        try {
+//                                            FullHttpResponse response = (FullHttpResponse) msg;
+//                                            byte[] responseBody;
+//                                            if (response.content() != null) {
+//                                                responseBody = new byte[response.content().readableBytes()];
+//                                                response.content().readBytes(responseBody);
+//                                            } else {
+//                                                responseBody = null;
+//                                            }
+//                                            SimpleHttpResponse resp = new SimpleHttpResponse(
+//                                                    response.protocolVersion(),
+//                                                    response.status(),
+//                                                    response.headers(),
+//                                                    responseBody
+//                                            );
+//                                            promise.trySuccess(resp);
+//                                        } catch (Throwable cause) {
+//                                            promise.tryFailure(cause);
+//                                        } finally {
+//                                            ReferenceCountUtil.safeRelease(msg);
+//                                        }
+//                                    } else {
+//                                        ctx.fireChannelRead(msg);
+//                                    }
+//                                }
+//
+//                                @Override
+//                                public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+//                                    promise.tryFailure(new ClosedChannelException());
+//                                }
+//                            });
+//        });
+//        Channel channel = future.get(timeoutMs, TimeUnit.MILLISECONDS);
+//        HttpRequest request;
+//        if (body == null) {
+//            request = new DefaultHttpRequest(HttpVersion.HTTP_1_1, method, uri, headers);
+//        } else {
+//            request = new DefaultFullHttpRequest(
+//                    HttpVersion.HTTP_1_1,
+//                    method,
+//                    uri,
+//                    Unpooled.wrappedBuffer(body),
+//                    headers,
+//                    headers
+//            );
+//        }
+//        try {
+//            channel.writeAndFlush(request).get(timeoutMs, TimeUnit.MILLISECONDS);
+//        } catch (Throwable cause) {
+//            channel.close().get(timeoutMs, TimeUnit.MILLISECONDS);
+//            throw cause;
+//        } finally {
+//            if (request instanceof FullHttpRequest && ((FullHttpRequest) request).refCnt() > 0) {
+//                ReferenceCountUtil.safeRelease(request);
+//            }
+//        }
+//        try {
+//            return promise.get(timeoutMs, TimeUnit.MILLISECONDS);
+//        } finally {
+//            channel.close().get(timeoutMs, TimeUnit.MILLISECONDS);
+//        }
+        return null;
     }
 
     public SimpleHttpResponse get(String uri) throws Exception {

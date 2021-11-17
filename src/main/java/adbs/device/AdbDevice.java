@@ -38,11 +38,11 @@ public interface AdbDevice extends AttributeMap {
 
     Set<Feature> features();
 
-    EventLoop executor();
+    EventLoop eventLoop();
 
-    Future<Channel> open(String destination, int timeoutMs, AdbChannelInitializer initializer);
+    ChannelFuture open(String destination, int timeoutMs, AdbChannelInitializer initializer);
 
-    default Future<Channel> open(String destination, AdbChannelInitializer initializer) {
+    default ChannelFuture open(String destination, AdbChannelInitializer initializer) {
         return open(destination, 30000, initializer);
     }
 
@@ -58,9 +58,9 @@ public interface AdbDevice extends AttributeMap {
         return shell(cmd, 0, args);
     }
 
-    Future<Channel> shell(boolean lineFramed, ChannelInboundHandler handler);
+    ChannelFuture shell(boolean lineFramed, ChannelInboundHandler handler);
 
-    Future<Channel> shell(String cmd, String[] args, boolean lineFramed, ChannelInboundHandler handler);
+    ChannelFuture shell(String cmd, String[] args, boolean lineFramed, ChannelInboundHandler handler);
 
     Future<SyncStat> stat(String path);
 
@@ -119,6 +119,8 @@ public interface AdbDevice extends AttributeMap {
     Future reverseRemove(String destination);
 
     Future reverseRemoveAll();
+
+    ChannelFuture forward(String destination, int port);
 
     Future close();
 

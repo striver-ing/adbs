@@ -5,26 +5,27 @@ import adbs.channel.AdbChannelAddress;
 import adbs.channel.AdbChannelInitializer;
 import adbs.channel.TCPReverse;
 import adbs.codec.*;
-import adbs.connection.AdbAuthHandler;
-import adbs.connection.AdbChannelProcessor;
-import adbs.connection.AdbPacketCodec;
+import adbs.connection.*;
 import adbs.constant.DeviceType;
 import adbs.constant.Feature;
-import adbs.constant.SyncID;
-import adbs.entity.ConnectResult;
-import adbs.entity.sync.*;
+import adbs.entity.DeviceInfo;
+import adbs.entity.PendingWriteEntry;
+import adbs.entity.sync.SyncDent;
+import adbs.entity.sync.SyncQuit;
+import adbs.entity.sync.SyncStat;
 import adbs.exception.RemoteException;
+import adbs.util.ChannelFactory;
 import adbs.util.ChannelUtil;
 import adbs.util.ShellUtil;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
+import io.netty.bootstrap.ServerBootstrap;
+import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.channel.*;
+import io.netty.channel.socket.SocketChannel;
+import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.codec.LineBasedFrameDecoder;
 import io.netty.handler.codec.string.StringDecoder;
 import io.netty.handler.codec.string.StringEncoder;
 import io.netty.util.DefaultAttributeMap;
-import io.netty.util.ReferenceCountUtil;
-import io.netty.util.concurrent.DefaultPromise;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.Promise;
 import org.apache.commons.lang3.ArrayUtils;
@@ -32,29 +33,24 @@ import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.ProtocolException;
-import java.nio.channels.ClosedChannelException;
 import java.nio.charset.StandardCharsets;
 import java.security.interfaces.RSAPrivateCrtKey;
+import java.util.LinkedList;
 import java.util.Map;
+import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 
-import static adbs.constant.Constants.SYNC_DATA_MAX;
-
+@SuppressWarnings({"rawtypes", "unchecked"})
 public abstract class AbstractAdbDevice extends DefaultAttributeMap implements AdbDevice {
 
     private static final Logger logger = LoggerFactory.getLogger(AbstractAdbDevice.class);
-
-    private static final AtomicReferenceFieldUpdater<AbstractAdbDevice, Promise> CONNECT_PROMISE_UPDATER
-            = AtomicReferenceFieldUpdater.newUpdater(AbstractAdbDevice.class, Promise.class, "connectPromise");
 
     private final String serial;
 
@@ -62,65 +58,62 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
 
     private final byte[] publicKey;
 
-    private final Map<CharSequence, AdbChannelInitializer> reverseMap;
+    private final ChannelFactory factory;
 
     private final AtomicInteger channelIdGen;
 
-    private volatile Promise<Channel> connectPromise;
+    private final Map<CharSequence, AdbChannelInitializer> reverseMap;
 
-    private volatile Promise closePromise;
+    private final Set<Channel> forwards;
 
-    private volatile DeviceType type;
+    private volatile ChannelFuture connectFuture;
 
-    private volatile String model;
+    private volatile Channel channel;
 
-    private volatile String product;
+    private volatile DeviceInfo deviceInfo;
 
-    private volatile String device;
-
-    private volatile Set<Feature> features;
-
-    public AbstractAdbDevice(String serial, RSAPrivateCrtKey privateKey, byte[] publicKey) {
+    protected AbstractAdbDevice(String serial, RSAPrivateCrtKey privateKey, byte[] publicKey, ChannelFactory factory) {
         this.serial = serial;
         this.privateKey = privateKey;
         this.publicKey = publicKey;
-        this.reverseMap = new ConcurrentHashMap<>();
+        this.factory = factory;
         this.channelIdGen = new AtomicInteger(1);
+        this.reverseMap = new ConcurrentHashMap<>();
+        this.forwards = ConcurrentHashMap.newKeySet();
+        this.initConnection();
     }
 
-    @Override
-    public boolean isClosed() {
-        return closePromise != null && (closePromise.isDone() || closePromise.isCancelled());
+    private void initConnection() {
+        ChannelFuture future = factory.newChannel(new ChannelInitializer<Channel>() {
+            @Override
+            protected void initChannel(Channel ch) throws Exception {
+                ChannelPipeline pipeline = ch.pipeline();
+                if (autoReconnect()) {
+                    pipeline.addLast("reconnect", new AutoReconnectHandler());
+                }
+                pipeline.addLast("codec", new AdbPacketCodec())
+                        .addLast("auth", new AdbAuthHandler(privateKey, publicKey))
+                        .addLast("connect", new ConnectHandler());
+            }
+        });
+        future.addListener(f -> {
+            if (f.cause() != null) {
+                if (autoReconnect()) {
+                    logger.warn("[{}] connect failed, try reconnect, error={}", serial(), f.cause().getMessage(), f.cause());
+                    initConnection();
+                } else {
+                    logger.warn("[{}] connect failed, error={}", serial(), f.cause().getMessage(), f.cause());
+                }
+            } else {
+                logger.info("[{}] connect success", serial());
+            }
+        });
+        this.connectFuture = future;
+        this.channel = future.channel();
     }
 
-    @Override
-    public String serial() {
-        return serial;
-    }
-
-    @Override
-    public DeviceType type() {
-        return type;
-    }
-
-    @Override
-    public String model() {
-        return model;
-    }
-
-    @Override
-    public String product() {
-        return product;
-    }
-
-    @Override
-    public String device() {
-        return device;
-    }
-
-    @Override
-    public Set<Feature> features() {
-        return features;
+    protected ChannelFactory factory() {
+        return factory;
     }
 
     protected RSAPrivateCrtKey privateKey() {
@@ -131,170 +124,78 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
         return publicKey;
     }
 
-    protected Future closeFuture() {
-        return closePromise;
-    }
+    abstract protected boolean autoReconnect();
 
-    protected abstract ChannelFuture newChannel(AdbChannelInitializer initializer);
-
-    protected void connect() {
-        Promise<Channel> promise = new DefaultPromise<>(executor());
-        if (!CONNECT_PROMISE_UPDATER.compareAndSet(this, null, promise)) {
-            return;
-        }
-        this.closePromise = new DefaultPromise(executor());
-        ChannelFuture cf = newChannel(ch -> {
-            ch.pipeline()
-                    .addLast(new ChannelInboundHandlerAdapter(){
-                        @Override
-                        public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-                            ctx.fireChannelInactive();
-                            //连接断开的时候关闭连接
-                            close();
-                        }
-                    })
-                    .addLast("codec", new AdbPacketCodec())
-                    .addLast("auth", new AdbAuthHandler(privateKey, publicKey))
-                    .addLast("connect", new ChannelInboundHandlerAdapter(){
-                        @Override
-                        public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
-                            if (evt instanceof ConnectResult) {
-                                ctx.pipeline().remove(this);
-                                ConnectResult result = (ConnectResult) evt;
-                                type = result.getType();
-                                model = result.getModel();
-                                product = result.getProduct();
-                                device = result.getDevice();
-                                features = result.getFeatures();
-                                ctx.pipeline().addAfter("codec", "processor", new AdbChannelProcessor(channelIdGen, reverseMap));
-                                connectPromise.trySuccess(ctx.channel());
-                            }
-                            ctx.fireUserEventTriggered(evt);
-                        }
-
-                        @Override
-                        public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-                            ctx.pipeline().remove(this);
-                            connectPromise.tryFailure(cause);
-                            ctx.fireExceptionCaught(cause);
-                        }
-
-                        @Override
-                        public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-                            ctx.pipeline().remove(this);
-                            connectPromise.tryFailure(new ClosedChannelException());
-                            ctx.fireChannelInactive();
-                        }
-                    });
-        });
-        Channel channel = cf.channel();
-
-        cf.addListener(f -> {
-            if (f.cause() != null) {
-                connectPromise.tryFailure(f.cause());
-            }
-        });
-
-        int connectTimeoutMillis = channel.config().getConnectTimeoutMillis();
-        if (connectTimeoutMillis > 0) {
-            executor().schedule(() -> {
-                ConnectTimeoutException cause =
-                        new ConnectTimeoutException("connection timed out: " + serial);
-                connectPromise.tryFailure(cause);
-            }, connectTimeoutMillis, TimeUnit.MILLISECONDS);
-        }
-
-        connectPromise.addListener(f -> {
-            if (f.cause() != null || f.isCancelled()) {
-                close().addListener(f1 -> {
-                    if (f1.cause() != null) {
-                        logger.warn("close channel failed:{}", f1.cause().getMessage(), f1.cause());
-                    }
-                });
-            }
-        });
+    @Override
+    public EventLoop eventLoop() {
+        return channel.eventLoop();
     }
 
     @Override
-    public Future<Channel> open(String destination, int timeoutMs, AdbChannelInitializer initializer) {
-        //如果连接被关闭的情况下，直接抛出异常
-        if (isClosed()) {
-            throw new RuntimeException("Connection Closed");
-        }
-        Promise<Channel> promise = new DefaultPromise<>(executor());
+    public boolean isClosed() {
+        return channel.closeFuture().isDone();
+    }
+
+    @Override
+    public String serial() {
+        return serial;
+    }
+
+    @Override
+    public DeviceType type() {
+        return deviceInfo != null ? deviceInfo.type : null;
+    }
+
+    @Override
+    public String model() {
+        return deviceInfo != null ? deviceInfo.model : null;
+    }
+
+    @Override
+    public String product() {
+        return deviceInfo != null ? deviceInfo.product : null;
+    }
+
+    @Override
+    public String device() {
+        return deviceInfo != null ? deviceInfo.device : null;
+    }
+
+    @Override
+    public Set<Feature> features() {
+        return deviceInfo != null ? deviceInfo.features : null;
+    }
+
+    @Override
+    public ChannelFuture open(String destination, int timeoutMs, AdbChannelInitializer initializer) {
         int localId = channelIdGen.getAndIncrement();
         String channelName = ChannelUtil.getChannelName(localId);
-        connectPromise.addListener((Future<Channel> f0) -> {
-            if (f0.cause() != null) {
-                promise.tryFailure(f0.cause());
-            } else {
-                try {
-                    Channel channel = f0.getNow();
-                    AdbChannel adbChannel = new AdbChannel(channel, localId, 0);
-                    adbChannel.config().setConnectTimeoutMillis(timeoutMs);
-                    initializer.initChannel(adbChannel);
-                    channel.pipeline().addLast(channelName, adbChannel);
-                    adbChannel.connect(new AdbChannelAddress(destination, localId))
-                            .addListener((ChannelFuture f1) -> {
-                                if (f1.cause() != null) {
-                                    promise.tryFailure(f1.cause());
-                                } else {
-                                    promise.trySuccess(f1.channel());
-                                }
-                            });
-                } catch (Throwable cause) {
-                    promise.tryFailure(cause);
-                }
-            }
-        });
-        return promise;
+        AdbChannel adbChannel = new AdbChannel(channel, localId, 0);
+        adbChannel.config().setConnectTimeoutMillis(timeoutMs);
+        initializer.initChannel(adbChannel);
+        channel.pipeline().addLast(channelName, adbChannel);
+        return adbChannel.connect(new AdbChannelAddress(destination, localId));
     }
 
     @Override
     public Future<String> exec(String destination, int timeoutMs) {
-        Promise<String> promise = new DefaultPromise<>(executor());
-        StringBuilder sb = new StringBuilder();
-        Future<Channel> future = open(destination, timeoutMs, channel -> {
+        Promise<String> promise = eventLoop().newPromise();
+        ChannelFuture future = open(destination, timeoutMs, channel -> {
             channel.pipeline()
                     .addLast(new StringDecoder(StandardCharsets.UTF_8))
                     .addLast(new StringEncoder(StandardCharsets.UTF_8))
-                    .addLast(new ChannelInboundHandlerAdapter() {
-                        @Override
-                        public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
-                            if (msg instanceof CharSequence) {
-                                sb.append(msg);
-                            } else {
-                                ctx.fireChannelRead(msg);
-                            }
-                        }
-
-                        @Override
-                        public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-                            try {
-                                promise.trySuccess(sb.toString());
-                            } catch (Throwable cause) {
-                                promise.tryFailure(cause);
-                            }
-                        }
-
-                        @Override
-                        public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-                            promise.tryFailure(cause);
-                        }
-                    });
+                    .addLast(new ExecHandler(promise));
         });
-        future.addListener((Future<Channel> f) -> {
+        future.addListener(f -> {
             if (f.cause() != null) {
                 promise.tryFailure(f.cause());
-            } else {
-                Channel channel = f.getNow();
-                promise.addListener(f1 -> {
-                    channel.close();
-                });
             }
         });
+        promise.addListener(f -> {
+            future.channel().close();
+        });
         if (timeoutMs > 0) {
-            executor().schedule(() -> {
+            eventLoop().schedule(() -> {
                 TimeoutException cause = new TimeoutException("exec timeout: " + destination.trim());
                 promise.tryFailure(cause);
             }, timeoutMs, TimeUnit.MILLISECONDS);
@@ -310,7 +211,7 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
     }
 
     @Override
-    public Future<Channel> shell(boolean lineFramed, ChannelInboundHandler handler) {
+    public ChannelFuture shell(boolean lineFramed, ChannelInboundHandler handler) {
         return open("shell:\0", channel -> {
             if (lineFramed) {
                 channel.pipeline().addLast(new LineBasedFrameDecoder(8192));
@@ -323,7 +224,7 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
     }
 
     @Override
-    public Future<Channel> shell(String cmd, String[] args, boolean lineFramed, ChannelInboundHandler handler) {
+    public ChannelFuture shell(String cmd, String[] args, boolean lineFramed, ChannelInboundHandler handler) {
         String shellCmd = ShellUtil.buildShellCmd(cmd, args);
         return open(shellCmd, channel -> {
             if (lineFramed) {
@@ -336,284 +237,75 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
         });
     }
 
+    private <T> void sync(Promise<T> promise, AdbChannelInitializer initializer) {
+        ChannelFuture future = open("sync:\0", initializer);
+        future.addListener(f -> {
+            if (f.cause() != null) {
+                promise.tryFailure(f.cause());
+            }
+        });
+        promise.addListener(f -> {
+            future.channel()
+                    .writeAndFlush(new SyncQuit())
+                    .addListener(f0 -> {
+                        future.channel().close();
+                    });
+        });
+    }
+
     @Override
     public Future<SyncStat> stat(String path) {
-        Promise<SyncStat> promise = new DefaultPromise<>(executor());
-        Future<Channel> future = open(
-                "sync:\0",
-                channel -> {
-                    channel.pipeline()
-                            .addLast(new SyncStatDecoder())
-                            .addLast(new SyncEncoder())
-                            .addLast(new ChannelInboundHandlerAdapter(){
-
-                                @Override
-                                public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
-                                    if (msg instanceof SyncFail) {
-                                        promise.tryFailure(new RemoteException(((SyncFail) msg).error));
-                                    } else if (msg instanceof SyncStat) {
-                                        promise.trySuccess((SyncStat) msg);
-                                    } else {
-                                        promise.tryFailure(new ProtocolException("Error reply:" + msg));
-                                    }
-                                }
-
-                                @Override
-                                public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-                                    promise.tryFailure(cause);
-                                }
-
-                                @Override
-                                public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-                                    promise.tryFailure(new ClosedChannelException());
-                                }
-                            });
-                });
-        future.addListener((Future<Channel> f0) -> {
-            if (f0.cause() != null) {
-                promise.tryFailure(f0.cause());
-            } else {
-                Channel channel = f0.getNow();
-                promise.addListener(f -> {
-                    channel.writeAndFlush(new SyncQuit());
-                });
-                boolean hasStatV2 = features.contains(Feature.STAT_V2);
-                SyncID sid = hasStatV2 ? SyncID.STAT_V2 : SyncID.LSTAT_V1;
-                SyncPath syncPath = new SyncPath(sid, path);
-                channel.writeAndFlush(syncPath)
-                        .addListener(f1 -> {
-                            if (f1.cause() != null) {
-                                promise.tryFailure(f1.cause());
-                            }
-                        });
-            }
+        Promise<SyncStat> promise = eventLoop().newPromise();
+        sync(promise, chl -> {
+            chl.pipeline()
+                    .addLast(new SyncStatDecoder())
+                    .addLast(new SyncEncoder())
+                    .addLast(new SyncStatHandler(this, path, promise));
         });
         return promise;
     }
 
     @Override
     public Future<SyncDent[]> list(String path) {
-        Promise<SyncDent[]> promise = new DefaultPromise<>(executor());
-        Future<Channel> future = open(
-                "sync:\0",
-                channel -> {
-                    channel.pipeline()
-                            .addLast(new SyncDentDecoder())
-                            .addLast(new SyncDentAggregator())
-                            .addLast(new SyncEncoder())
-                            .addLast(new ChannelInboundHandlerAdapter(){
-
-                                @Override
-                                public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
-                                    if (msg instanceof SyncFail) {
-                                        promise.tryFailure(new RemoteException(((SyncFail) msg).error));
-                                    } else if (msg instanceof SyncDent[]) {
-                                        promise.trySuccess((SyncDent[]) msg);
-                                    } else {
-                                        promise.tryFailure(new ProtocolException("Error reply:" + msg));
-                                    }
-                                }
-
-                                @Override
-                                public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-                                    promise.tryFailure(cause);
-                                }
-
-                                @Override
-                                public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-                                    promise.tryFailure(new ClosedChannelException());
-                                }
-                            });
-                });
-        future.addListener((Future<Channel> f0) -> {
-            if (f0.cause() != null) {
-                promise.tryFailure(f0.cause());
-            } else {
-                Channel channel = f0.getNow();
-                promise.addListener(f -> {
-                    channel.writeAndFlush(new SyncQuit());
-                });
-                boolean hasLsV2 = features.contains(Feature.LS_V2);
-                SyncID sid = hasLsV2 ? SyncID.LIST_V2 : SyncID.LIST_V1;
-                SyncPath syncPath = new SyncPath(sid, path);
-                channel.writeAndFlush(syncPath)
-                        .addListener(f1 -> {
-                            if (f1.cause() != null) {
-                                promise.tryFailure(f1.cause());
-                            }
-                        });
-            }
+        Promise<SyncDent[]> promise = eventLoop().newPromise();
+        sync(promise, chl -> {
+            chl.pipeline()
+                    .addLast(new SyncDentDecoder())
+                    .addLast(new SyncDentAggregator())
+                    .addLast(new SyncEncoder())
+                    .addLast(new SyncListHandler(this, path, promise));
         });
         return promise;
     }
 
     @Override
     public Future pull(String src, OutputStream dest) {
-        Promise promise = new DefaultPromise<>(executor());
-        Future<Channel> future = open(
-                "sync:\0",
-                channel -> {
-                    channel.pipeline()
-                            .addLast(new SyncDataDecoder())
-                            .addLast(new SyncEncoder())
-                            .addLast(new ChannelInboundHandlerAdapter(){
-
-                                @Override
-                                public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
-                                    if (msg instanceof SyncFail) {
-                                        promise.tryFailure(new RemoteException(((SyncFail) msg).error));
-                                    } else if (msg instanceof SyncData) {
-                                        ByteBuf buf = ((SyncData) msg).data;
-                                        try {
-                                            int size = buf.readableBytes();
-                                            if (size > 0) {
-                                                buf.readBytes(dest, size);
-                                            }
-                                        } catch (Throwable cause) {
-                                            promise.tryFailure(cause);
-                                        } finally {
-                                            ReferenceCountUtil.safeRelease(msg);
-                                        }
-                                    } else if (msg instanceof SyncDataDone) {
-                                        promise.trySuccess(null);
-                                    } else {
-                                        promise.tryFailure(new ProtocolException("Error reply:" + msg));
-                                    }
-                                }
-
-                                @Override
-                                public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-                                    promise.tryFailure(cause);
-                                }
-
-                                @Override
-                                public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-                                    promise.tryFailure(new ClosedChannelException());
-                                }
-                            });
-                });
-        future.addListener((Future<Channel> f0) -> {
-            if (f0.cause() != null) {
-                promise.tryFailure(f0.cause());
-            } else {
-                Channel channel = f0.getNow();
-                promise.addListener(f -> {
-                    channel.writeAndFlush(new SyncQuit());
-                });
-                channel.writeAndFlush(new SyncPath(SyncID.RECV_V1, src))
-                        .addListener(f -> {
-                            if (f.cause() != null) {
-                                promise.tryFailure(f.cause());
-                            }
-                        });
-            }
+        Promise promise = eventLoop().newPromise();
+        sync(promise, chl -> {
+            chl.pipeline()
+                    .addLast(new SyncDataDecoder())
+                    .addLast(new SyncEncoder())
+                    .addLast(new SyncPullHandler(this, src, dest, promise));
         });
         return promise;
     }
 
     @Override
     public Future push(InputStream src, String dest, int mode, int mtime) {
-        String destAndMode = dest + "," + mode;
-        Promise promise = new DefaultPromise<>(executor());
-        Future<Channel> future = open(
-                "sync:\0",
-                channel -> {
-                    channel.pipeline()
-                            .addLast(new SyncDecoder())
-                            .addLast(new SyncEncoder())
-                            .addLast(new ChannelInboundHandlerAdapter(){
-
-                                @Override
-                                public void channelActive(ChannelHandlerContext ctx) throws Exception {
-                                    //发送SEND指令
-                                    ctx.writeAndFlush(new SyncPath(SyncID.SEND_V1, destAndMode))
-                                            .addListener(f1 -> {
-                                                if (f1.cause() != null) {
-                                                    promise.tryFailure(f1.cause());
-                                                }
-                                            });
-                                    //发送数据
-                                    //启动一个新的线程读取流并发送数据
-                                    new Thread() {
-                                        @Override
-                                        public void run() {
-                                            try {
-                                                while (true) {
-                                                    byte[] buffer = new byte[SYNC_DATA_MAX];
-                                                    int size = src.read(buffer);
-                                                    if (size == -1) {
-                                                        break;
-                                                    }
-                                                    if (size == 0) {
-                                                        continue;
-                                                    }
-                                                    ByteBuf payload = Unpooled.wrappedBuffer(buffer, 0, size);
-                                                    try {
-                                                        ctx.writeAndFlush(new SyncData(payload))
-                                                                .addListener(f2 -> {
-                                                                    if (f2.cause() != null) {
-                                                                        promise.tryFailure(f2.cause());
-                                                                    }
-                                                                });
-                                                    } catch (Throwable cause) {
-                                                        ReferenceCountUtil.safeRelease(payload);
-                                                        throw cause;
-                                                    }
-                                                }
-                                                //发送done
-                                                ctx.writeAndFlush(new SyncDataDone(mtime))
-                                                        .addListener(f3 -> {
-                                                            if (f3.cause() != null) {
-                                                                promise.tryFailure(f3.cause());
-                                                            }
-                                                        });
-                                            } catch (Throwable cause) {
-                                                promise.tryFailure(cause);
-                                            }
-                                        }
-                                    }.start();
-                                }
-
-                                @Override
-                                public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
-                                    if (msg instanceof SyncFail) {
-                                        promise.tryFailure(new RemoteException(((SyncFail) msg).error));
-                                    } else if (msg instanceof SyncOkay) {
-                                        promise.trySuccess(null);
-                                    } else {
-                                        promise.tryFailure(new ProtocolException("Error reply:" + msg));
-                                    }
-                                }
-
-                                @Override
-                                public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-                                    promise.tryFailure(cause);
-                                }
-
-                                @Override
-                                public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-                                    promise.tryFailure(new ClosedChannelException());
-                                }
-                            });
-                });
-        future.addListener((Future<Channel> f0) -> {
-            if (f0.cause() != null) {
-                promise.tryFailure(f0.cause());
-            } else {
-                Channel channel = f0.getNow();
-                promise.addListener(f -> {
-                    channel.writeAndFlush(new SyncQuit());
-                });
-            }
+        Promise promise = eventLoop().newPromise();
+        sync(promise, chl -> {
+            chl.pipeline()
+                    .addLast(new SyncDecoder())
+                    .addLast(new SyncEncoder())
+                    .addLast(new SyncPushHandler(this, src, dest, mode, mtime, promise));
         });
-
         return promise;
     }
 
 
     @Override
     public Future root() {
-        Promise promise = new DefaultPromise<>(executor());
+        Promise promise = eventLoop().newPromise();
         exec("root:\0").addListener((Future<String> f) -> {
                     if (f.cause() != null) {
                         promise.tryFailure(f.cause());
@@ -622,8 +314,9 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
                         if (s.equals("adbd is already running as root")) {
                             promise.trySuccess(null);
                         } else {
-                            //此时需要等待adbd重启
-                            closePromise.addListener(f1 -> {
+                            initConnection();
+                            ChannelFuture future = this.connectFuture;
+                            future.addListener(f1 -> {
                                 if (f1.cause() != null) {
                                     promise.tryFailure(f1.cause());
                                 } else {
@@ -638,7 +331,7 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
 
     @Override
     public Future unroot() {
-        Promise promise = new DefaultPromise<>(executor());
+        Promise promise = eventLoop().newPromise();
         exec("unroot:\0").addListener((Future<String> f) -> {
                     if (f.cause() != null) {
                         promise.tryFailure(f.cause());
@@ -647,8 +340,9 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
                         if (s.equals("adbd not running as root")) {
                             promise.trySuccess(null);
                         } else {
-                            //此时需要等待adbd重启
-                            closePromise.addListener(f1 -> {
+                            initConnection();
+                            ChannelFuture future = this.connectFuture;
+                            future.addListener(f1 -> {
                                 if (f1.cause() != null) {
                                     promise.tryFailure(f1.cause());
                                 } else {
@@ -663,7 +357,7 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
 
     @Override
     public Future remount() {
-        Promise promise = new DefaultPromise<>(executor());
+        Promise promise = eventLoop().newPromise();
         exec("unroot:\0").addListener((Future<String> f) -> {
                     if (f.cause() != null) {
                         promise.tryFailure(f.cause());
@@ -701,7 +395,7 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
     @Override
     public Future<String> reverse(String destination, AdbChannelInitializer initializer) {
         String cmd = "reverse:forward:" + destination + ";" + destination + "\0";
-        Promise promise = new DefaultPromise<>(executor());
+        Promise promise = eventLoop().newPromise();
         exec(cmd).addListener((Future<String> f) -> {
                     if (f.cause() != null) {
                         promise.tryFailure(f.cause());
@@ -739,14 +433,14 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
             throw new IllegalArgumentException("local");
         }
         String cmd = "reverse:forward:" + remote + ";" + local + "\0";
-        Promise promise = new DefaultPromise<>(executor());
+        Promise<String> promise = eventLoop().newPromise();
         exec(cmd).addListener((Future<String> f) -> {
                     if (f.cause() != null) {
                         promise.tryFailure(f.cause());
                     } else {
                         try {
                             String result = readResult(f.getNow());
-                            reverseMap.put(local, new TCPReverse(host, port, executor()));
+                            reverseMap.put(local, new TCPReverse(host, port, eventLoop()));
                             promise.trySuccess(result);
                         } catch (Throwable cause) {
                             promise.tryFailure(cause);
@@ -758,7 +452,7 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
 
     @Override
     public Future<String[]> reverseList() {
-        Promise<String[]> promise = new DefaultPromise<>(executor());
+        Promise<String[]> promise = eventLoop().newPromise();
         exec("reverse:list-forward\0").addListener((Future<String> f) -> {
                     if (f.cause() != null) {
                         promise.tryFailure(f.cause());
@@ -782,7 +476,7 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
 
     @Override
     public Future reverseRemove(String destination) {
-        Promise promise = new DefaultPromise<>(executor());
+        Promise promise = eventLoop().newPromise();
         exec("reverse:killforward:" + destination + "\0").addListener((Future<String> f) -> {
                     if (f.cause() != null) {
                         promise.tryFailure(f.cause());
@@ -801,7 +495,7 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
 
     @Override
     public Future reverseRemoveAll() {
-        Promise promise = new DefaultPromise<>(executor());
+        Promise promise = eventLoop().newPromise();
         exec("reverse:killforward-all\0").addListener((Future<String> f) -> {
                     if (f.cause() != null) {
                         promise.tryFailure(f.cause());
@@ -819,27 +513,128 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
     }
 
     @Override
-    public Future close() {
-        connectPromise.addListener((Future<Channel> f) -> {
-            if (f.cause() != null) {
-                closePromise.trySuccess(null);
-            } else {
-                f.getNow().close().addListener(f1 -> {
-                    if (f1.cause() != null) {
-                        closePromise.tryFailure(f1.cause());
-                    } else {
-                        closePromise.trySuccess(null);
+    public ChannelFuture forward(String destination, int port) {
+        ServerBootstrap bootstrap = new ServerBootstrap();
+        return bootstrap.group(eventLoop())
+                .channel(NioServerSocketChannel.class)
+                .option(ChannelOption.SO_BACKLOG, 1024)
+                .option(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
+                .childOption(ChannelOption.TCP_NODELAY, true)
+                .childOption(ChannelOption.SO_KEEPALIVE, true)
+                .childHandler(new ChannelInitializer<SocketChannel>() {
+
+                    @Override
+                    protected void initChannel(SocketChannel ch) throws Exception {
+
+                        ChannelFuture future = open(destination, 30000, chl -> {
+                            chl.pipeline().addLast(new ChannelInboundHandlerAdapter() {
+                                @Override
+                                public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+                                    ch.writeAndFlush(msg);
+                                }
+
+                                @Override
+                                public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+                                    ch.close();
+                                }
+                            });
+                        }).addListener(f -> {
+                            if (f.cause() != null) {
+                                logger.warn("open destination `{}` failed, error={}", destination, f.cause().getMessage(), f.cause());
+                                ch.close();
+                            }
+                        });
+                        ch.pipeline().addLast(new ChannelInboundHandlerAdapter(){
+                            @Override
+                            public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+                                future.channel().writeAndFlush(msg);
+                            }
+
+                            @Override
+                            public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+                                future.channel().close();
+                            }
+                        });
+                    }
+                })
+                .bind(port)
+                .addListener((ChannelFuture f) -> {
+                    if (f.cause() != null) {
+                        forwards.add(f.channel());
                     }
                 });
+    }
+
+    @Override
+    public Future close() {
+        if (isClosed()) {
+            return channel.closeFuture();
+        } else {
+            //关闭reverse
+            reverseRemoveAll();
+            //关闭forward
+            for (Channel forward : forwards) {
+                forward.close();
             }
-        });
-        //如果调用了close，则强制取消连接动作
-        connectPromise.cancel(true);
-        return closePromise;
+            channel.close();
+            return channel.closeFuture();
+        }
     }
 
     @Override
     public String toString() {
         return serial;
+    }
+
+    private class AutoReconnectHandler extends ChannelInboundHandlerAdapter {
+
+        @Override
+        public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+            initConnection();
+            super.channelInactive(ctx);
+        }
+    }
+
+    private class ConnectHandler extends ChannelDuplexHandler {
+
+        private final Queue<PendingWriteEntry> pendingWriteEntries = new LinkedList<>();
+
+        @Override
+        public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+            if (msg instanceof DeviceInfo) {
+                ctx.pipeline()
+                        .remove(this)
+                        .addAfter("codec", "processor", new AdbChannelProcessor(channelIdGen, reverseMap));
+                AbstractAdbDevice.this.deviceInfo = (DeviceInfo) msg;
+                while (true) {
+                    PendingWriteEntry entry = pendingWriteEntries.poll();
+                    if (entry == null) {
+                        break;
+                    }
+                    ctx.channel().write(entry.msg).addListener(f -> {
+                        if (f.cause() != null) {
+                            entry.promise.tryFailure(f.cause());
+                        } else {
+                            entry.promise.trySuccess();
+                        }
+                    });
+                }
+                ctx.channel().flush();
+            } else {
+                super.channelRead(ctx, msg);
+            }
+        }
+
+        @Override
+        public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+            ctx.close();
+        }
+
+        @Override
+        public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
+            if (!pendingWriteEntries.offer(new PendingWriteEntry(msg, promise))) {
+                promise.tryFailure(new RejectedExecutionException("queue is full"));
+            }
+        }
     }
 }

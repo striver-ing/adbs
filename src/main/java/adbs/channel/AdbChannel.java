@@ -3,6 +3,7 @@ package adbs.channel;
 import adbs.constant.Command;
 import adbs.constant.Constants;
 import adbs.entity.AdbPacket;
+import adbs.entity.PendingWriteEntry;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
@@ -15,6 +16,9 @@ import java.net.SocketAddress;
 import java.nio.channels.ClosedChannelException;
 import java.nio.channels.ConnectionPendingException;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedList;
+import java.util.Queue;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -27,6 +31,8 @@ public class AdbChannel extends AbstractChannel implements ChannelInboundHandler
     private final ChannelConfig config;
 
     private final ChannelMetadata metadata;
+
+    private final Queue<PendingWriteEntry> pendingWriteEntries;
 
     private volatile ChannelPromise connectPromise;
 
@@ -46,6 +52,7 @@ public class AdbChannel extends AbstractChannel implements ChannelInboundHandler
         this.remoteId = remoteId;
         this.eventLoop = new AdbChannelEventLoop(parent.eventLoop());
         this.metadata = new ChannelMetadata(false);
+        this.pendingWriteEntries = new LinkedList<>();
         this.config = new DefaultChannelConfig(this);
         this.config.setAllocator(parent.config().getAllocator());
         this.config.setConnectTimeoutMillis(parent.config().getConnectTimeoutMillis());
@@ -113,6 +120,60 @@ public class AdbChannel extends AbstractChannel implements ChannelInboundHandler
     @Override
     protected void doBeginRead() throws Exception {
 
+    }
+
+    @Override
+    public ChannelFuture write(Object msg, ChannelPromise promise) {
+        if (!isActive()) {
+            //如果不是活跃的，则放到队列去
+            if (!pendingWriteEntries.offer(new PendingWriteEntry(msg, promise))) {
+                promise.tryFailure(new RejectedExecutionException("queue is full"));
+            }
+            return promise;
+        } else {
+            return super.write(msg, promise);
+        }
+    }
+
+    @Override
+    public ChannelFuture write(Object msg) {
+        if (!isActive()) {
+            ChannelPromise promise = newPromise();
+            //如果不是活跃的，则放到队列去
+            if (!pendingWriteEntries.offer(new PendingWriteEntry(msg, promise))) {
+                promise.tryFailure(new RejectedExecutionException("queue is full"));
+            }
+            return promise;
+        } else {
+            return super.write(msg);
+        }
+    }
+
+    @Override
+    public ChannelFuture writeAndFlush(Object msg, ChannelPromise promise) {
+        if (!isActive()) {
+            //如果不是活跃的，则放到队列去
+            if (!pendingWriteEntries.offer(new PendingWriteEntry(msg, promise))) {
+                promise.tryFailure(new RejectedExecutionException("queue is full"));
+            }
+            return promise;
+        } else {
+            return super.writeAndFlush(msg, promise);
+        }
+    }
+
+    @Override
+    public ChannelFuture writeAndFlush(Object msg) {
+        if (!isActive()) {
+            //如果不是活跃的，则放到队列去
+            ChannelPromise promise = newPromise();
+            if (!pendingWriteEntries.offer(new PendingWriteEntry(msg, promise))) {
+                promise.tryFailure(new RejectedExecutionException("queue is full"));
+            }
+            return promise;
+        } else {
+            return super.writeAndFlush(msg);
+        }
     }
 
     @Override
@@ -224,6 +285,21 @@ public class AdbChannel extends AbstractChannel implements ChannelInboundHandler
                         if (!promiseSet) {
                             close();
                         }
+                        //开始写入pending write entries
+                        while (true) {
+                            PendingWriteEntry entry = pendingWriteEntries.poll();
+                            if (entry == null) {
+                                break;
+                            }
+                            pipeline().write(entry.msg).addListener(f -> {
+                                if (f.cause() != null) {
+                                    entry.promise.tryFailure(f.cause());
+                                } else {
+                                    entry.promise.trySuccess();
+                                }
+                            });
+                        }
+                        flush();
                     } else {
                         pipeline().fireUserEventTriggered("ACK");
                     }
@@ -260,7 +336,6 @@ public class AdbChannel extends AbstractChannel implements ChannelInboundHandler
     }
 
     @Override
-    @SuppressWarnings("deprecation")
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
         pipeline().fireExceptionCaught(cause);
         ctx.fireExceptionCaught(cause);

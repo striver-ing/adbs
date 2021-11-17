@@ -1,35 +1,25 @@
 package adbs.device;
 
-import adbs.channel.AdbChannelInitializer;
+import adbs.util.ChannelFactory;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
-import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
-import io.netty.util.concurrent.DefaultPromise;
 import io.netty.util.concurrent.Future;
-import io.netty.util.concurrent.GlobalEventExecutor;
-import io.netty.util.concurrent.Promise;
-import org.apache.commons.lang3.StringUtils;
 
 import java.security.interfaces.RSAPrivateCrtKey;
 
+@SuppressWarnings({"rawtypes", "unchecked"})
 public class SocketAdbDevice extends AbstractAdbDevice {
 
     private final String host;
 
     private final Integer port;
 
-    private final EventLoopGroup executors;
-
     public SocketAdbDevice(String host, Integer port, RSAPrivateCrtKey privateKey, byte[] publicKey) {
-        super(host + ":" + port, privateKey, publicKey);
+        super(host + ":" + port, privateKey, publicKey, new SocketChannelFactory(host, port));
         this.host = host;
         this.port = port;
-        this.executors = new NioEventLoopGroup(1, r -> {
-            return new Thread(r, "Connection-" + host + ":" + port);
-        });
-        this.connect();
     }
 
     public String host() {
@@ -41,77 +31,52 @@ public class SocketAdbDevice extends AbstractAdbDevice {
     }
 
     @Override
-    public EventLoop executor() {
-        return executors.next();
+    protected boolean autoReconnect() {
+        return true;
     }
 
-    protected EventLoopGroup executors() {
-        return executors;
-    }
-
-    @Override
-    protected ChannelFuture newChannel(AdbChannelInitializer initializer) {
-        Bootstrap bootstrap = new Bootstrap();
-        return bootstrap.group(executors)
-                .channel(NioSocketChannel.class)
-                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 30000)
-                .option(ChannelOption.SO_KEEPALIVE, true)
-                .option(ChannelOption.TCP_NODELAY, true)
-                .option(ChannelOption.SO_LINGER, 3)
-                .option(ChannelOption.SO_REUSEADDR, true)
-                .option(ChannelOption.AUTO_CLOSE, true)
-                .handler(new ChannelInitializer<SocketChannel>() {
-                    @Override
-                    protected void initChannel(SocketChannel ch) throws Exception {
-                        initializer.initChannel(ch);
-                    }
-                })
-                .connect(host, port);
-    }
-
-
-    @SuppressWarnings("Duplicates")
     @Override
     public Future reload(int port) {
-        Promise promise = new DefaultPromise<>(executor());
-        exec("tcpip:"+port+"\0").addListener((Future<String> f) -> {
-                    if (f.cause() != null) {
-                        promise.tryFailure(f.cause());
-                    } else {
-                        String s = StringUtils.trim(f.getNow());
-                        if (s.startsWith("restarting in TCP mode")) {
-                            promise.trySuccess(null);
-                        } else {
-                            //此时需要等待adbd重启
-                            closeFuture().addListener(f1 -> {
-                                if (f1.cause() != null) {
-                                    promise.tryFailure(f1.cause());
-                                } else {
-                                    promise.trySuccess(null);
-                                }
-                            });
-                        }
-                    }
-                });
-        return promise;
+        throw new UnsupportedOperationException();
     }
 
-    @SuppressWarnings("Duplicates")
     @Override
     public Future close() {
-        Promise promise = new DefaultPromise(GlobalEventExecutor.INSTANCE);
-        super.close().addListener(f0 -> {
-            executors.shutdownGracefully().addListener(f1 -> {
-                if (f0.cause() == null && f1.cause() == null) {
-                    promise.trySuccess(null);
-                } else if (f0.cause() != null) {
-                    promise.tryFailure(f0.cause());
-                } else {
-                    promise.tryFailure(f1.cause());
-                }
-            });
+        SocketChannelFactory factory = (SocketChannelFactory) factory();
+        return super.close().addListener(f -> {
+            factory.eventLoop.shutdownGracefully();
         });
-        return promise;
     }
-    
+
+    private static class SocketChannelFactory implements ChannelFactory {
+
+        private final String host;
+
+        private final int port;
+
+        private final EventLoopGroup eventLoop;
+
+        public SocketChannelFactory(String host, int port) {
+            this.host = host;
+            this.port = port;
+            this.eventLoop = new NioEventLoopGroup(1, r -> {
+                return new Thread(r, "AdbThread-" + host + ":" + port);
+            });
+        }
+
+        @Override
+        public ChannelFuture newChannel(ChannelInitializer<Channel> initializer) {
+            Bootstrap bootstrap = new Bootstrap();
+            return bootstrap.group(eventLoop)
+                    .channel(NioSocketChannel.class)
+                    .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 30000)
+                    .option(ChannelOption.SO_KEEPALIVE, true)
+                    .option(ChannelOption.TCP_NODELAY, true)
+                    .option(ChannelOption.SO_LINGER, 3)
+                    .option(ChannelOption.SO_REUSEADDR, true)
+                    .option(ChannelOption.AUTO_CLOSE, true)
+                    .handler(initializer)
+                    .connect(host, port);
+        }
+    }
 }

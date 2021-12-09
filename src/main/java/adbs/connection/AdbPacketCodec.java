@@ -2,11 +2,9 @@ package adbs.connection;
 
 import adbs.constant.Command;
 import adbs.entity.AdbPacket;
-import adbs.util.MessageUtil;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.ByteToMessageCodec;
-import io.netty.util.ReferenceCountUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

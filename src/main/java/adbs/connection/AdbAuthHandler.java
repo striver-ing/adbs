@@ -28,6 +28,12 @@ public class AdbAuthHandler extends ChannelInboundHandlerAdapter {
 
     private static final Logger logger = LoggerFactory.getLogger(AdbAuthHandler.class);
 
+    private static final int STATE_CONNECTING = 0;
+
+    private static final int STATE_AUTHORIZING = 1;
+
+    private static final int STATE_AUTHORIZED = 2;
+
     private final RSAPrivateCrtKey privateKey;
 
     private final byte[] publicKey;
@@ -37,7 +43,7 @@ public class AdbAuthHandler extends ChannelInboundHandlerAdapter {
     public AdbAuthHandler(RSAPrivateCrtKey privateKey, byte[] publicKey) {
         this.privateKey = privateKey;
         this.publicKey = publicKey;
-        this.state = new AtomicInteger(0);
+        this.state = new AtomicInteger(STATE_CONNECTING);
     }
 
     private void write(ChannelHandlerContext ctx, AdbPacket message) {
@@ -87,7 +93,7 @@ public class AdbAuthHandler extends ChannelInboundHandlerAdapter {
                     ctx.fireExceptionCaught(new ProtocolException("Invalid auth type: " + message.arg0));
                     return;
                 }
-                if (state.compareAndSet(0, 1)) {
+                if (state.compareAndSet(STATE_CONNECTING, STATE_AUTHORIZING)) {
                     if (payload.length != Constants.TOKEN_SIZE) {
                         ctx.fireExceptionCaught(new ProtocolException("Invalid token size, expect=" + Constants.TOKEN_SIZE + ", actual=" + payload.length));
                         return;
@@ -95,7 +101,7 @@ public class AdbAuthHandler extends ChannelInboundHandlerAdapter {
                     byte[] sign = AuthUtil.sign(privateKey, payload).toByteArray();
                     ByteBuf signBuf = Unpooled.wrappedBuffer(sign);
                     write(ctx, new AdbPacket(Command.A_AUTH, Constants.ADB_AUTH_SIGNATURE, 0, signBuf));
-                } else if (state.compareAndSet(1, 2)) {
+                } else if (state.compareAndSet(STATE_AUTHORIZING, STATE_AUTHORIZED)) {
                     byte[] bytes = Arrays.copyOf(publicKey, publicKey.length + 1);
                     ByteBuf keyBuf = Unpooled.wrappedBuffer(bytes);
                     write(ctx, new AdbPacket(Command.A_AUTH, Constants.ADB_AUTH_RSAPUBLICKEY, 0, keyBuf));
@@ -116,7 +122,7 @@ public class AdbAuthHandler extends ChannelInboundHandlerAdapter {
                 String[] pieces = p.split(":");
                 if (pieces.length > 2) {
                     String[] props = pieces[2].split(";");
-                    for(String prop : props) {
+                    for (String prop : props) {
                         String[] kv = prop.split("=");
                         if (kv.length != 2) {
                             continue;
@@ -131,7 +137,7 @@ public class AdbAuthHandler extends ChannelInboundHandlerAdapter {
                             device = value;
                         } else if ("features".equals(key)) {
                             Set<Feature> fts = new HashSet<>();
-                            for(String f : value.split(",")) {
+                            for (String f : value.split(",")) {
                                 Feature fe = Feature.findByCode(f);
                                 if (fe == null) {
                                     logger.warn("Unknown feature: " + f);

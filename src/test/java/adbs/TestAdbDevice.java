@@ -4,11 +4,14 @@ import adbs.device.AdbDevice;
 import adbs.device.SocketAdbDevice;
 import adbs.exception.RemoteException;
 import adbs.util.AuthUtil;
+import adbs.util.SimpleHttpClient;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.LoggerContext;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.handler.codec.http.*;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -56,13 +59,14 @@ public class TestAdbDevice {
     }
 
     public static void main(String[] args) throws Exception {
-        AdbDevice device = new SocketAdbDevice("192.168.137.69", 5555, privateKey, publicKey);
-        ChannelFuture future = device.forward("localabstract:chrome_devtools_remote\0", 9222);
-        future.syncUninterruptibly();
-        System.out.println("forward:9222");
-        //device.forward("localabstract:chrome_devtools_remote\0", 9222).get(30, TimeUnit.SECONDS);
-//        install(device, new File("D:\\tmp\\tmallandroid_10002119.apk"));
-//        device.push(new File("D:\\tmp\\pdd.apk"), "/data/local/tmp/pdd.apk").get();
-//        device.close();
+        AdbDevice device = new SocketAdbDevice("192.168.101.162", 5555, privateKey, publicKey);
+        device.setAutoReconnect(true);
+        SimpleHttpClient httpClient = new SimpleHttpClient(device, 9002, 30000);
+        SimpleHttpClient.SimpleHttpResponse response = httpClient.get("/taobao/test");
+        System.out.println(response);
+        response = httpClient.get("/taobao/test2");
+        System.out.println(response);
+        httpClient.close();
+        device.close();
     }
 }

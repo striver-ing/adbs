@@ -6,6 +6,7 @@ import adbs.channel.AdbChannelInitializer;
 import adbs.channel.TCPReverse;
 import adbs.codec.*;
 import adbs.connection.*;
+import adbs.constant.Constants;
 import adbs.constant.DeviceType;
 import adbs.constant.Feature;
 import adbs.entity.DeviceInfo;
@@ -41,10 +42,7 @@ import java.util.LinkedList;
 import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @SuppressWarnings({"rawtypes", "unchecked"})
@@ -66,6 +64,8 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
 
     private final Set<Channel> forwards;
 
+    private volatile boolean autoReconnect;
+
     private volatile ChannelFuture connectFuture;
 
     private volatile Channel channel;
@@ -80,6 +80,7 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
         this.channelIdGen = new AtomicInteger(1);
         this.reverseMap = new ConcurrentHashMap<>();
         this.forwards = ConcurrentHashMap.newKeySet();
+        this.autoReconnect = false;
         this.initConnection();
     }
 
@@ -88,21 +89,19 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
             @Override
             protected void initChannel(Channel ch) throws Exception {
                 ChannelPipeline pipeline = ch.pipeline();
-                if (autoReconnect()) {
-                    pipeline.addLast("reconnect", new AutoReconnectHandler());
-                }
-                pipeline.addLast("codec", new AdbPacketCodec())
+                pipeline.addLast("reconnect", new AutoReconnectHandler())
+                        .addLast("codec", new AdbPacketCodec())
                         .addLast("auth", new AdbAuthHandler(privateKey, publicKey))
                         .addLast("connect", new ConnectHandler());
             }
         });
         future.addListener(f -> {
             if (f.cause() != null) {
-                if (autoReconnect()) {
-                    logger.warn("[{}] connect failed, try reconnect, error={}", serial(), f.cause().getMessage(), f.cause());
+                if (autoReconnect) {
+                    logger.error("[{}] connect failed, try reconnect, error={}", serial(), f.cause().getMessage(), f.cause());
                     initConnection();
                 } else {
-                    logger.warn("[{}] connect failed, error={}", serial(), f.cause().getMessage(), f.cause());
+                    logger.error("[{}] connect failed, error={}", serial(), f.cause().getMessage(), f.cause());
                 }
             } else {
                 logger.info("[{}] connect success", serial());
@@ -124,16 +123,9 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
         return publicKey;
     }
 
-    abstract protected boolean autoReconnect();
-
     @Override
     public EventLoop eventLoop() {
         return channel.eventLoop();
-    }
-
-    @Override
-    public boolean isClosed() {
-        return channel.closeFuture().isDone();
     }
 
     @Override
@@ -540,7 +532,7 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
                             });
                         }).addListener(f -> {
                             if (f.cause() != null) {
-                                logger.warn("open destination `{}` failed, error={}", destination, f.cause().getMessage(), f.cause());
+                                logger.error("open destination `{}` failed, error={}", destination, f.cause().getMessage(), f.cause());
                                 ch.close();
                             }
                         });
@@ -566,18 +558,31 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
     }
 
     @Override
-    public Future close() {
-        if (isClosed()) {
-            return channel.closeFuture();
-        } else {
+    public void setAutoReconnect(boolean autoReconnect) {
+        this.autoReconnect = autoReconnect;
+    }
+
+    @Override
+    public void close() {
+        setAutoReconnect(false);
+        try {
             //关闭reverse
-            reverseRemoveAll();
-            //关闭forward
-            for (Channel forward : forwards) {
-                forward.close();
+            reverseRemoveAll().get(30, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            logger.error("[{}] remove reverse failed", serial(), e);
+        }
+        //关闭forward
+        for (Channel forward : forwards) {
+            try {
+                forward.close().get(30, TimeUnit.SECONDS);
+            } catch (Exception e) {
+                logger.error("[{}] remove forward failed, channel={}", serial(), forward, e);
             }
-            channel.close();
-            return channel.closeFuture();
+        }
+        try {
+            channel.close().get(30, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            throw new RuntimeException("disconnect failed", e);
         }
     }
 
@@ -590,7 +595,12 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
 
         @Override
         public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-            initConnection();
+            if (autoReconnect) {
+                logger.error("[{}] connection disconnected, try reconnect", serial());
+                initConnection();
+            } else {
+                logger.info("[{}] connection disconnected", serial());
+            }
             super.channelInactive(ctx);
         }
     }

@@ -6,11 +6,18 @@ import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.util.concurrent.Future;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.security.interfaces.RSAPrivateCrtKey;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 @SuppressWarnings({"rawtypes", "unchecked"})
 public class SocketAdbDevice extends AbstractAdbDevice {
+
+    private static final Logger logger = LoggerFactory.getLogger(SocketAdbDevice.class);
 
     private final String host;
 
@@ -31,21 +38,22 @@ public class SocketAdbDevice extends AbstractAdbDevice {
     }
 
     @Override
-    protected boolean autoReconnect() {
-        return true;
-    }
-
-    @Override
     public Future reload(int port) {
         throw new UnsupportedOperationException();
     }
 
     @Override
-    public Future close() {
-        SocketChannelFactory factory = (SocketChannelFactory) factory();
-        return super.close().addListener(f -> {
-            factory.eventLoop.shutdownGracefully();
-        });
+    public void close() {
+        try {
+            super.close();
+        } finally {
+            SocketChannelFactory factory = (SocketChannelFactory) factory();
+            try {
+                factory.eventLoop.shutdownGracefully().get(30, TimeUnit.SECONDS);
+            } catch (Exception e) {
+                logger.error("shutdown event loop failed", e);
+            }
+        }
     }
 
     private static class SocketChannelFactory implements ChannelFactory {
@@ -72,7 +80,6 @@ public class SocketAdbDevice extends AbstractAdbDevice {
                     .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 30000)
                     .option(ChannelOption.SO_KEEPALIVE, true)
                     .option(ChannelOption.TCP_NODELAY, true)
-                    .option(ChannelOption.SO_LINGER, 3)
                     .option(ChannelOption.SO_REUSEADDR, true)
                     .option(ChannelOption.AUTO_CLOSE, true)
                     .handler(initializer)

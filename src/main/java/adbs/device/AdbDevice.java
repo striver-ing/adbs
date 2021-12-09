@@ -16,8 +16,6 @@ public interface AdbDevice extends AttributeMap {
 
     int DEFAULT_MODE = 0664;
 
-    boolean isClosed();
-
     /**
      * serial             print <serial-number>
      * @return
@@ -122,6 +120,8 @@ public interface AdbDevice extends AttributeMap {
 
     ChannelFuture forward(String destination, int port);
 
-    Future close();
+    void setAutoReconnect(boolean autoReconnect);
+
+    void close();
 
 }

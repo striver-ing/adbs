@@ -6,7 +6,6 @@ import adbs.channel.AdbChannelInitializer;
 import adbs.channel.TCPReverse;
 import adbs.codec.*;
 import adbs.connection.*;
-import adbs.constant.Constants;
 import adbs.constant.DeviceType;
 import adbs.constant.Feature;
 import adbs.entity.DeviceInfo;
@@ -42,7 +41,10 @@ import java.util.LinkedList;
 import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
-import java.util.concurrent.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @SuppressWarnings({"rawtypes", "unchecked"})

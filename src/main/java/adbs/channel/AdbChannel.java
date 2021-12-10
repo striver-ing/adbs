@@ -8,6 +8,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
 import io.netty.util.ReferenceCountUtil;
+import io.netty.util.ReferenceCounted;
 import io.netty.util.internal.StringUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -113,8 +114,23 @@ public class AdbChannel extends AbstractChannel implements ChannelInboundHandler
         if (isActive()) {
             parent().writeAndFlush(new AdbPacket(Command.A_CLSE, localId, remoteId));
         }
+        try {
+            parent().pipeline().remove(this);
+        } catch (Exception e) {
+            logger.error("remove handler `{}` failed", this, e);
+        }
         localId = remoteId = 0;
-        parent().pipeline().remove(this);
+        //将pending的写入全部失败
+        while (true) {
+            PendingWriteEntry entry = pendingWriteEntries.poll();
+            if (entry == null) {
+                break;
+            }
+            entry.promise.tryFailure(new ClosedChannelException());
+            if (entry.msg instanceof ReferenceCounted && ((ReferenceCounted) entry.msg).refCnt() > 0) {
+                ReferenceCountUtil.safeRelease(entry.msg);
+            }
+        }
     }
 
     @Override

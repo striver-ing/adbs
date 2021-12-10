@@ -59,9 +59,9 @@ public class TestAdbDevice {
     }
 
     public static void main(String[] args) throws Exception {
-        AdbDevice device = new SocketAdbDevice("192.168.101.162", 5555, privateKey, publicKey);
-        device.setAutoReconnect(false);
-        SimpleHttpClient httpClient = new SimpleHttpClient(device, 9002, 30000);
+        AdbDevice device = new SocketAdbDevice("127.0.0.1", 6056, privateKey, publicKey);
+        device.setAutoReconnect(true);
+        SimpleHttpClient httpClient = new SimpleHttpClient(device, 9002, 50000);
         SimpleHttpClient.SimpleHttpResponse response = httpClient.get("/taobao/test");
         System.out.println(response);
         response = httpClient.get("/taobao/test2");

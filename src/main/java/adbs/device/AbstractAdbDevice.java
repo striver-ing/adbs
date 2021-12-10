@@ -26,6 +26,8 @@ import io.netty.handler.codec.LineBasedFrameDecoder;
 import io.netty.handler.codec.string.StringDecoder;
 import io.netty.handler.codec.string.StringEncoder;
 import io.netty.util.DefaultAttributeMap;
+import io.netty.util.ReferenceCountUtil;
+import io.netty.util.ReferenceCounted;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.Promise;
 import org.apache.commons.lang3.ArrayUtils;
@@ -35,6 +37,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.channels.ClosedChannelException;
 import java.nio.charset.StandardCharsets;
 import java.security.interfaces.RSAPrivateCrtKey;
 import java.util.LinkedList;
@@ -87,6 +90,7 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
     }
 
     private void initConnection() {
+        ConnectHandler connectHandler = new ConnectHandler();
         ChannelFuture future = factory.newChannel(new ChannelInitializer<Channel>() {
             @Override
             protected void initChannel(Channel ch) throws Exception {
@@ -94,11 +98,12 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
                 pipeline.addLast("reconnect", new AutoReconnectHandler())
                         .addLast("codec", new AdbPacketCodec())
                         .addLast("auth", new AdbAuthHandler(privateKey, publicKey))
-                        .addLast("connect", new ConnectHandler());
+                        .addLast("connect", connectHandler);
             }
         });
         future.addListener(f -> {
             if (f.cause() != null) {
+                connectHandler.connectFailed(f.cause());
                 if (autoReconnect) {
                     logger.error("[{}] connect failed, try reconnect, error={}", serial(), f.cause().getMessage(), f.cause());
                     initConnection();
@@ -610,6 +615,19 @@ public abstract class AbstractAdbDevice extends DefaultAttributeMap implements A
     private class ConnectHandler extends ChannelDuplexHandler {
 
         private final Queue<PendingWriteEntry> pendingWriteEntries = new LinkedList<>();
+
+        private void connectFailed(Throwable cause) {
+            while (true) {
+                PendingWriteEntry entry = pendingWriteEntries.poll();
+                if (entry == null) {
+                    break;
+                }
+                entry.promise.tryFailure(cause);
+                if (entry.msg instanceof ReferenceCounted && ((ReferenceCounted) entry.msg).refCnt() > 0) {
+                    ReferenceCountUtil.safeRelease(entry.msg);
+                }
+            }
+        }
 
         @Override
         public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {

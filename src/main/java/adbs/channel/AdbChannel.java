@@ -114,10 +114,8 @@ public class AdbChannel extends AbstractChannel implements ChannelInboundHandler
         if (isActive()) {
             parent().writeAndFlush(new AdbPacket(Command.A_CLSE, localId, remoteId));
         }
-        try {
+        if (parent().isOpen()) {
             parent().pipeline().remove(this);
-        } catch (Exception e) {
-            logger.error("remove handler `{}` failed", this, e);
         }
         localId = remoteId = 0;
         //将pending的写入全部失败
@@ -406,7 +404,7 @@ public class AdbChannel extends AbstractChannel implements ChannelInboundHandler
                 }
 
                 promise.addListener((ChannelFutureListener) future -> {
-                    if (future.isCancelled()) {
+                    if (!future.isSuccess()) {
                         if (connectTimeoutFuture != null) {
                             connectTimeoutFuture.cancel(false);
                         }

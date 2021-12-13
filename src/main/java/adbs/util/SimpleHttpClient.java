@@ -25,7 +25,7 @@ public class SimpleHttpClient {
 
     private volatile Promise<SimpleHttpResponse> promise;
 
-    public SimpleHttpClient(AdbDevice device, int port, int timeoutMs) {
+    public SimpleHttpClient(AdbDevice device, int port, int timeoutMs) throws Exception {
         this.device = device;
         this.future = device.open(
                 "tcp:" + port + "\0",
@@ -71,9 +71,13 @@ public class SimpleHttpClient {
                                 }
                             });
                 });
+        this.future.sync();
     }
 
     private synchronized SimpleHttpResponse execute(HttpMethod method, String uri, HttpHeaders headers, byte[] body) throws Exception {
+        if (!future.channel().isOpen()) {
+            throw new ClosedChannelException();
+        }
         promise = device.eventLoop().newPromise();
         DefaultFullHttpRequest request = new DefaultFullHttpRequest(
                 HttpVersion.HTTP_1_1,

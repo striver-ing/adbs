@@ -59,14 +59,22 @@ public class TestAdbDevice {
     }
 
     public static void main(String[] args) throws Exception {
-        AdbDevice device = new SocketAdbDevice("127.0.0.1", 6056, privateKey, publicKey);
+        LoggerContext loggerContext = (LoggerContext) LoggerFactory.getILoggerFactory();
+        loggerContext.getLogger("root").setLevel(Level.DEBUG);
+        AdbDevice device = new SocketAdbDevice("192.168.137.87", 5555, privateKey, publicKey);
         device.setAutoReconnect(true);
         SimpleHttpClient httpClient = new SimpleHttpClient(device, 9002, 50000);
-        SimpleHttpClient.SimpleHttpResponse response = httpClient.get("/taobao/test");
-        System.out.println(response);
-        response = httpClient.get("/taobao/test2");
-        System.out.println(response);
-        httpClient.close();
-        device.close();
+        while (true) {
+            try {
+                SimpleHttpClient.SimpleHttpResponse response = httpClient.get("/test");
+                System.out.println(response.status());
+            } catch (Exception e) {
+                try {
+                    httpClient = new SimpleHttpClient(device, 9002, 50000);
+                } catch (Exception e1) {
+                    e1.printStackTrace();
+                }
+            }
+        }
     }
 }
